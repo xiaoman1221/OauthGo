@@ -3,6 +3,7 @@ package router
 import (
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"OauthGo/handlers"
 	"OauthGo/middleware"
@@ -146,17 +147,30 @@ func Setup() *gin.Engine {
 
 // serveFrontend 提供前端静态资源（构建产物位于 web/dist）
 func serveFrontend(r *gin.Engine) {
-	if _, err := os.Stat("web/dist"); err != nil {
+	dist := frontendDistDir()
+	if info, err := os.Stat(dist); err != nil || !info.IsDir() {
 		return
 	}
 
-	r.Static("/assets", "web/dist/assets")
-	r.StaticFile("/favicon.ico", "web/dist/favicon.ico")
+	r.Static("/assets", filepath.Join(dist, "assets"))
+	r.StaticFile("/favicon.ico", filepath.Join(dist, "favicon.ico"))
 	r.NoRoute(func(c *gin.Context) {
 		if c.Request.Method == http.MethodGet {
-			c.File("web/dist/index.html")
+			c.File(filepath.Join(dist, "index.html"))
 			return
 		}
 		c.JSON(404, gin.H{"code": 404, "message": "not found"})
 	})
+}
+
+// frontendDistDir 定位前端构建产物目录：
+// 优先取可执行文件同级的 web/dist（发布包/容器），回退到当前工作目录的 web/dist（本地 go run / 仓库内运行）。
+func frontendDistDir() string {
+	if exe, err := os.Executable(); err == nil {
+		dir := filepath.Join(filepath.Dir(exe), "web", "dist")
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			return dir
+		}
+	}
+	return "web/dist"
 }

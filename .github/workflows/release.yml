@@ -94,9 +94,9 @@ jobs:
         run: go build -trimpath -ldflags="-s -w" -o oauthgo${{ matrix.ext }} .
       - name: Package (binary + web/dist)
         run: |
-          mkdir -p _pkg release
+          mkdir -p _pkg/web release
           cp oauthgo${{ matrix.ext }} _pkg/
-          cp -r web/dist _pkg/web
+          cp -r web/dist _pkg/web/dist
           if [[ "${{ matrix.os }}" == "windows" ]]; then
             sudo apt-get update -qq >/dev/null 2>&1 && sudo apt-get install -y -qq zip >/dev/null 2>&1
             (cd _pkg && zip -qr ../release/oauthgo-${{ matrix.os }}-${{ matrix.arch }}.zip oauthgo.exe web)
