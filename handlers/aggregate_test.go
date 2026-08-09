@@ -570,3 +570,173 @@ func TestLoginRecordAccountLabel(t *testing.T) {
 		t.Fatalf("导入记录用户名展示异常: %v", imp)
 	}
 }
+
+// TestSettingsTestSenders 系统设置发信测试接口（SMTP / SMS）
+func TestSettingsTestSenders(t *testing.T) {
+	admin := models.User{
+		Username: "adm" + utils.RandomString(6), Nickname: "管理员",
+		Password: "x", PasswordSet: true, Role: "admin",
+	}
+	if err := database.DB.Create(&admin).Error; err != nil {
+		t.Fatalf("创建管理员失败: %v", err)
+	}
+	token, err := utils.GenerateToken(admin.ID, admin.Role)
+	if err != nil {
+		t.Fatalf("生成 token 失败: %v", err)
+	}
+
+	t.Run("SMTP 测试需管理员", func(t *testing.T) {
+		// 未配置 SMTP 时返回失败信息而非 401/403（说明已通过权限校验）
+		code, m := doAuthedJSON(t, http.MethodPost, "/api/settings/test/smtp",
+			`{"to":"a@b.com"}`, token)
+		if code != 400 {
+			t.Fatalf("SMTP 测试接口状态码异常: %d %v", code, m)
+		}
+		if int(m["code"].(float64)) != 400 {
+			t.Fatalf("未配置 SMTP 应返回失败: %v", m)
+		}
+		if !strings.Contains(m["message"].(string), "SMTP") {
+			t.Fatalf("失败信息应包含 SMTP 提示: %v", m)
+		}
+	})
+
+	t.Run("SMS 测试未配置服务商", func(t *testing.T) {
+		code, m := doAuthedJSON(t, http.MethodPost, "/api/settings/test/sms",
+			`{"phone":"13800138000"}`, token)
+		if code != 400 || int(m["code"].(float64)) != 400 {
+			t.Fatalf("SMS 测试未配置服务商应返回失败: %d %v", code, m)
+		}
+	})
+
+	t.Run("缺少参数返回 400", func(t *testing.T) {
+		code, m := doAuthedJSON(t, http.MethodPost, "/api/settings/test/smtp",
+			`{}`, token)
+		if code != 400 || int(m["code"].(float64)) != 400 {
+			t.Fatalf("缺少收件邮箱应返回失败: %d %v", code, m)
+		}
+	})
+}
+
+// TestProviderManagement 登录渠道管理：主站开关、回调地址拼接与渠道测试接口
+func TestProviderManagement(t *testing.T) {
+	admin := models.User{
+		Username: "adm" + utils.RandomString(6), Nickname: "管理员",
+		Password: "x", PasswordSet: true, Role: "admin",
+	}
+	if err := database.DB.Create(&admin).Error; err != nil {
+		t.Fatalf("创建管理员失败: %v", err)
+	}
+	token, err := utils.GenerateToken(admin.ID, admin.Role)
+	if err != nil {
+		t.Fatalf("生成 token 失败: %v", err)
+	}
+
+	// 重置 gitee 渠道状态
+	database.DB.Model(&models.Provider{}).Where("name = ?", "gitee").Updates(map[string]interface{}{
+		"enabled": true, "main_site": true, "client_id": "test-client", "client_secret": "test-secret",
+	})
+
+	t.Run("PublicProviders 仅返回主站渠道", func(t *testing.T) {
+		// 关闭 gitee 主站开关后，登录页不应再返回该渠道
+		database.DB.Model(&models.Provider{}).Where("name = ?", "gitee").Update("main_site", false)
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/oauth/providers", nil)
+		testEngine.ServeHTTP(w, req)
+		var m map[string]interface{}
+		_ = json.Unmarshal(w.Body.Bytes(), &m)
+		list := m["data"].([]interface{})
+		for _, item := range list {
+			if item.(map[string]interface{})["name"] == "gitee" {
+				t.Fatalf("gitee 已关闭主站开关，不应出现在登录页: %v", list)
+			}
+		}
+		database.DB.Model(&models.Provider{}).Where("name = ?", "gitee").Update("main_site", true)
+	})
+
+	t.Run("UpdateProvider 支持主站开关", func(t *testing.T) {
+		code, m := doAuthedJSON(t, http.MethodPut, "/api/providers/gitee",
+			`{"main_site":false}`, token)
+		if code != 200 || int(m["code"].(float64)) != 0 {
+			t.Fatalf("更新主站开关失败: %d %v", code, m)
+		}
+		var p models.Provider
+		database.DB.Where("name = ?", "gitee").First(&p)
+		if p.MainSite {
+			t.Fatalf("main_site 应已关闭")
+		}
+		doAuthedJSON(t, http.MethodPut, "/api/providers/gitee", `{"main_site":true}`, token)
+	})
+
+	t.Run("ListProviders 返回拼接回调地址", func(t *testing.T) {
+		code, m := doAuthedJSON(t, http.MethodGet, "/api/providers", "", token)
+		if code != 200 || int(m["code"].(float64)) != 0 {
+			t.Fatalf("获取渠道列表失败: %d %v", code, m)
+		}
+		for _, item := range m["data"].(map[string]interface{})["list"].([]interface{}) {
+			it := item.(map[string]interface{})
+			if it["name"] == "gitee" {
+				cb, _ := it["callback_url"].(string)
+				if !strings.Contains(cb, "/api/oauth/gitee/callback") {
+					t.Fatalf("回调地址拼接错误: %v", it)
+				}
+				return
+			}
+		}
+		t.Fatalf("渠道列表缺少 gitee")
+	})
+
+	t.Run("TestProvider 校验必填字段", func(t *testing.T) {
+		// 空请求回退到已保存配置（gitee 已配置完整）
+		code, m := doAuthedJSON(t, http.MethodPost, "/api/providers/gitee/test",
+			`{}`, token)
+		if code != 200 || int(m["code"].(float64)) != 0 {
+			t.Fatalf("空请求应回退到已保存配置: %d %v", code, m)
+		}
+
+		// 请求与库中均缺 ClientID
+		database.DB.Model(&models.Provider{}).Where("name = ?", "qq").
+			Updates(map[string]interface{}{"client_id": "", "client_secret": ""})
+		code, m = doAuthedJSON(t, http.MethodPost, "/api/providers/qq/test", `{}`, token)
+		if code != 400 || int(m["code"].(float64)) != 400 {
+			t.Fatalf("缺 ClientID 应失败: %d %v", code, m)
+		}
+
+		// gitee 配置完整：返回可生成授权地址
+		code, m = doAuthedJSON(t, http.MethodPost, "/api/providers/gitee/test",
+			`{"client_id":"test-client","client_secret":"test-secret"}`, token)
+		if code != 200 || int(m["code"].(float64)) != 0 {
+			t.Fatalf("gitee 配置有效应通过: %d %v", code, m)
+		}
+		authURL, _ := m["data"].(map[string]interface{})["auth_url"].(string)
+		if !strings.Contains(authURL, "gitee.com") {
+			t.Fatalf("授权地址异常: %v", authURL)
+		}
+
+		// 渠道不存在
+		code, m = doAuthedJSON(t, http.MethodPost, "/api/providers/unknown/test", `{}`, token)
+		if code != 404 {
+			t.Fatalf("未知渠道应 404: %d %v", code, m)
+		}
+	})
+
+	t.Run("TestProvider 校验扩展字段", func(t *testing.T) {
+		// 支付宝缺少应用私钥
+		code, m := doAuthedJSON(t, http.MethodPost, "/api/providers/alipay/test",
+			`{"client_id":"2021000000","config":"{}"}`, token)
+		if code != 400 || !strings.Contains(m["message"].(string), "应用私钥") {
+			t.Fatalf("支付宝缺应用私钥应失败: %d %v", code, m)
+		}
+		// 企业微信缺少 AgentId
+		code, m = doAuthedJSON(t, http.MethodPost, "/api/providers/wecom/test",
+			`{"client_id":"ww-corpid","config":"{\"login_type\":\"CorpApp\"}"}`, token)
+		if code != 400 || !strings.Contains(m["message"].(string), "AgentId") {
+			t.Fatalf("企业微信缺 AgentId 应失败: %d %v", code, m)
+		}
+		// 微信小程序无网页跳转：配置完整即通过
+		code, m = doAuthedJSON(t, http.MethodPost, "/api/providers/wechat_miniprogram/test",
+			`{"client_id":"wx-appid","client_secret":"wx-secret"}`, token)
+		if code != 200 {
+			t.Fatalf("微信小程序配置有效应通过: %d %v", code, m)
+		}
+	})
+}

@@ -49,10 +49,10 @@ func DefaultSettingDefs() []SettingDef {
 		{Key: "smtp_tls", Value: "1", Description: "使用 TLS 加密", Group: "smtp"},
 
 		// 短信设置
-		{Key: "sms_provider", Value: "none", Description: "短信服务商（none / aliyun / tencent / smsbao）", Group: "sms"},
+		{Key: "sms_provider", Value: "none", Description: "短信服务商", Group: "sms"},
 		{Key: "sms_access_key_id", Value: "", Description: "AccessKey ID", Group: "sms"},
 		{Key: "sms_access_key_secret", Value: "", Description: "AccessKey Secret", Group: "sms", Sensitive: true},
-		{Key: "sms_region_id", Value: "cn-hangzhou", Description: "短信地域（aliyun: cn-hangzhou / tencent: ap-guangzhou）", Group: "sms"},
+		{Key: "sms_region_id", Value: "cn-hangzhou", Description: "短信地域", Group: "sms"},
 		{Key: "sms_sign_name", Value: "", Description: "短信签名", Group: "sms"},
 		{Key: "sms_aliyun_template_code", Value: "", Description: "阿里云验证码模板CODE", Group: "sms"},
 		{Key: "sms_tencent_sdk_app_id", Value: "", Description: "腾讯云 SDK AppID", Group: "sms"},

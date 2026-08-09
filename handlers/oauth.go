@@ -21,10 +21,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// PublicProviders 登录页获取已启用的登录渠道
+// PublicProviders 登录页获取已启用且应用于主站登录的渠道
 func PublicProviders(c *gin.Context) {
 	var list []models.Provider
-	if err := database.DB.Where("enabled = ?", true).Order("sort asc").Find(&list).Error; err != nil {
+	if err := database.DB.Where("enabled = ? AND main_site = ?", true, true).Order("sort asc").Find(&list).Error; err != nil {
 		utils.FailInternal(c, "查询失败")
 		return
 	}
@@ -47,16 +47,33 @@ func ListProviders(c *gin.Context) {
 		utils.FailInternal(c, "查询失败")
 		return
 	}
-	utils.Success(c, gin.H{"list": list})
+	result := make([]gin.H, 0, len(list))
+	for _, p := range list {
+		result = append(result, gin.H{
+			"id":           p.ID,
+			"name":         p.Name,
+			"display_name": p.DisplayName,
+			"category":     p.Category,
+			"client_id":    p.ClientID,
+			"client_secret": p.ClientSecret,
+			"config":       p.Config,
+			"enabled":      p.Enabled,
+			"main_site":    p.MainSite,
+			"sort":         p.Sort,
+			// 回调地址统一由 HOST 拼接，不支持自定义
+			"callback_url": callbackURL(p.Name),
+		})
+	}
+	utils.Success(c, gin.H{"list": result})
 }
 
 // ProviderRequest 更新渠道配置请求
 type ProviderRequest struct {
 	ClientID     string `json:"client_id"`
 	ClientSecret string `json:"client_secret"`
-	RedirectURL  string `json:"redirect_url"`
 	Config       string `json:"config"`
 	Enabled      *bool  `json:"enabled"`
+	MainSite     *bool  `json:"main_site"`
 }
 
 // UpdateProvider 更新渠道配置（管理员）
@@ -82,9 +99,6 @@ func UpdateProvider(c *gin.Context) {
 	if req.ClientSecret != "" {
 		updates["client_secret"] = req.ClientSecret
 	}
-	if req.RedirectURL != "" {
-		updates["redirect_url"] = req.RedirectURL
-	}
 	if req.Config != "" {
 		if !json.Valid([]byte(req.Config)) {
 			utils.FailBadRequest(c, "扩展配置必须是合法的 JSON")
@@ -94,6 +108,9 @@ func UpdateProvider(c *gin.Context) {
 	}
 	if req.Enabled != nil {
 		updates["enabled"] = *req.Enabled
+	}
+	if req.MainSite != nil {
+		updates["main_site"] = *req.MainSite
 	}
 	if len(updates) == 0 {
 		utils.FailBadRequest(c, "没有需要更新的字段")
@@ -357,6 +374,11 @@ func bindProviderUser(providerName string, info *providers.UserInfo) (*models.Us
 	return &user, nil
 }
 
+// callbackURL 返回渠道回调地址（统一由 HOST 拼接，不支持自定义）
+func callbackURL(name string) string {
+	return baseHost() + "/api/oauth/" + name + "/callback"
+}
+
 // loadProvider 从数据库加载渠道配置并构建适配器
 func loadProvider(name string) (providers.Provider, bool) {
 	var p models.Provider
@@ -364,9 +386,7 @@ func loadProvider(name string) (providers.Provider, bool) {
 		return nil, false
 	}
 
-	if p.RedirectURL == "" {
-		p.RedirectURL = baseHost() + "/api/oauth/" + name + "/callback"
-	}
+	p.RedirectURL = callbackURL(name)
 
 	var extra map[string]interface{}
 	_ = json.Unmarshal([]byte(p.Config), &extra)
@@ -382,6 +402,110 @@ func loadProvider(name string) (providers.Provider, bool) {
 		return nil, false
 	}
 	return prov, true
+}
+
+// TestProvider 测试渠道配置（管理员）：校验必填项并尝试构建授权地址
+func TestProvider(c *gin.Context) {
+	name := c.Param("name")
+
+	meta, ok := providers.FindMeta(name)
+	if !ok {
+		utils.FailNotFound(c, "不支持的登录渠道")
+		return
+	}
+
+	var p models.Provider
+	if err := database.DB.Where("name = ?", name).First(&p).Error; err != nil {
+		utils.FailNotFound(c, "登录渠道不存在")
+		return
+	}
+
+	var req struct {
+		ClientID     string `json:"client_id"`
+		ClientSecret string `json:"client_secret"`
+		Config       string `json:"config"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.FailBadRequest(c, "参数错误："+err.Error())
+		return
+	}
+
+	clientID := req.ClientID
+	if clientID == "" {
+		clientID = p.ClientID
+	}
+	clientSecret := req.ClientSecret
+	if clientSecret == "" {
+		clientSecret = p.ClientSecret
+	}
+	configJSON := req.Config
+	if configJSON == "" {
+		configJSON = p.Config
+	}
+
+	if clientID == "" {
+		utils.FailBadRequest(c, fmt.Sprintf("请先填写「%s」的 %s", meta.DisplayName, providerIDLabel(name)))
+		return
+	}
+
+	var extra map[string]interface{}
+	_ = json.Unmarshal([]byte(configJSON), &extra)
+
+	// 各渠道必填扩展字段校验
+	switch name {
+	case "alipay":
+		if strings.TrimSpace(providers.Config{Extra: extra}.ExtraString("app_private_key")) == "" {
+			utils.FailBadRequest(c, "支付宝渠道必须填写「应用私钥」")
+			return
+		}
+	case "wecom":
+		if strings.TrimSpace(providers.Config{Extra: extra}.ExtraString("agent_id")) == "" {
+			utils.FailBadRequest(c, "企业微信渠道必须填写「AgentId」")
+			return
+		}
+	}
+
+	prov, err := providers.New(name, providers.Config{
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		RedirectURL:  callbackURL(name),
+		Extra:        extra,
+	})
+	if err != nil {
+		utils.FailBadRequest(c, "渠道配置错误："+err.Error())
+		return
+	}
+
+	authURL := prov.GetAuthURL(providers.GenerateState())
+	if authURL == "" {
+		utils.Success(c, gin.H{"message": "配置有效（该渠道无需网页跳转，前端直接传 code 登录）"})
+		return
+	}
+	utils.Success(c, gin.H{"message": "配置有效，授权地址可正常生成", "auth_url": authURL})
+}
+
+// providerIDLabel 返回渠道主凭据的名称
+func providerIDLabel(name string) string {
+	switch name {
+	case "wechat", "wechat_miniprogram":
+		return "AppID"
+	case "qq":
+		return "APP ID"
+	case "weibo":
+		return "App Key"
+	case "douyin":
+		return "Client Key"
+	case "baidu":
+		return "API Key"
+	case "wecom":
+		return "CorpID"
+	case "lark":
+		return "App ID"
+	case "infoflow":
+		return "AppID"
+	default:
+		return "ClientID"
+	}
 }
 
 // baseHost 返回前端站点地址（配置的 HOST）

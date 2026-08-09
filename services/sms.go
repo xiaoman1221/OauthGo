@@ -40,6 +40,23 @@ func SendVerifyCodeSMS(phone, code string) error {
 	}
 }
 
+// SendTestSMS 发送测试短信（用于系统设置中的发信测试）
+func SendTestSMS(phone string) error {
+	code := "123456"
+	switch SMSProviderName() {
+	case "aliyun":
+		return sendAliyunSMS(phone, code)
+	case "tencent":
+		return sendTencentSMS(phone, code)
+	case "smsbao":
+		content := fmt.Sprintf("【%s】OauthGo 短信发送测试：如果您收到此短信，说明短信服务配置正常。",
+			GetSetting("sms_sign_name", ""))
+		return sendSMSBao(phone, content)
+	default:
+		return fmt.Errorf("未配置短信服务商")
+	}
+}
+
 // sendAliyunSMS 阿里云短信（RPC 签名）
 func sendAliyunSMS(phone, code string) error {
 	params := map[string]string{

@@ -105,6 +105,8 @@ func Setup() *gin.Engine {
 			{
 				settings.GET("", handlers.ListSettings)
 				settings.PUT("", handlers.UpdateSettings)
+				settings.POST("/test/smtp", handlers.TestSMTP)
+				settings.POST("/test/sms", handlers.TestSMS)
 			}
 
 			// 用户管理模块（管理员）
@@ -123,6 +125,7 @@ func Setup() *gin.Engine {
 			{
 				providersGroup.GET("", handlers.ListProviders)
 				providersGroup.PUT("/:name", handlers.UpdateProvider)
+				providersGroup.POST("/:name/test", handlers.TestProvider)
 			}
 		}
 	}

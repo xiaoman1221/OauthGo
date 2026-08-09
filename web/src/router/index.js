@@ -36,6 +36,8 @@ const routes = [
         component: () => import('../views/Notifications.vue')
       },
       { path: 'providers', name: 'Providers', component: () => import('../views/Providers.vue') },
+      { path: 'docs/providers', name: 'ProviderDocs', component: () => import('../views/ProviderDocs.vue') },
+      { path: 'docs/service', name: 'ServiceDocs', component: () => import('../views/ServiceDocs.vue') },
       { path: 'user-center', name: 'UserCenter', component: () => import('../views/UserCenter.vue') },
       { path: 'settings', name: 'Settings', component: () => import('../views/Settings.vue') },
       { path: 'users', name: 'Users', component: () => import('../views/Users.vue') }

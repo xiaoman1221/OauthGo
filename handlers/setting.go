@@ -55,3 +55,35 @@ func UpdateSettings(c *gin.Context) {
 	}
 	utils.SuccessMsg(c, "保存成功")
 }
+
+// TestSMTP 发送测试邮件
+func TestSMTP(c *gin.Context) {
+	var req struct {
+		To string `json:"to" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.FailBadRequest(c, "收件邮箱不能为空")
+		return
+	}
+	if err := services.SendTestMail(req.To); err != nil {
+		utils.FailBadRequest(c, "发送失败："+err.Error())
+		return
+	}
+	utils.SuccessMsg(c, "测试邮件已发送")
+}
+
+// TestSMS 发送测试短信
+func TestSMS(c *gin.Context) {
+	var req struct {
+		Phone string `json:"phone" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.FailBadRequest(c, "收件手机号不能为空")
+		return
+	}
+	if err := services.SendTestSMS(req.Phone); err != nil {
+		utils.FailBadRequest(c, "发送失败："+err.Error())
+		return
+	}
+	utils.SuccessMsg(c, "测试短信已发送")
+}

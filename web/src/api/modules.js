@@ -29,6 +29,8 @@ export const listNotificationLogs = (params) =>
 // 系统设置
 export const getSettings = () => request.get('/settings')
 export const updateSettings = (items) => request.put('/settings', { items })
+export const testSMTP = (to) => request.post('/settings/test/smtp', { to })
+export const testSMS = (phone) => request.post('/settings/test/sms', { phone })
 
 // 用户管理
 export const listUsers = (params) => request.get('/users', { params })
@@ -40,3 +42,4 @@ export const deleteUser = (id) => request.delete(`/users/${id}`)
 export const publicProviders = () => request.get('/oauth/providers')
 export const listProviders = () => request.get('/providers')
 export const updateProvider = (name, data) => request.put(`/providers/${name}`, data)
+export const testProvider = (name, data) => request.post(`/providers/${name}/test`, data)

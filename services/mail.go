@@ -94,3 +94,9 @@ func SendTemplateMail(to, templateName, subject string, data map[string]interfac
 	body := RenderTemplate(GetSetting("email_template_"+templateName, ""), data)
 	return SendMail(to, subject, body)
 }
+
+// SendTestMail 发送测试邮件（用于系统设置中的发信测试）
+func SendTestMail(to string) error {
+	body := "这是一封来自 OauthGo 的测试邮件。\n\n如果您收到此邮件，说明 SMTP 发信配置正常。"
+	return SendMail(to, "OauthGo 邮件发送测试", body)
+}

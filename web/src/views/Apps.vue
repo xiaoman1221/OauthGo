@@ -27,6 +27,11 @@
           <span class="mono" @click="onCopy(row.appid)">{{ row.appid }}</span>
         </template>
       </el-table-column>
+      <el-table-column label="AppKey" min-width="200">
+        <template #default="{ row }">
+          <span class="mono" @click="onCopy(row.app_key)">{{ row.app_key }}</span>
+        </template>
+      </el-table-column>
       <el-table-column label="登录类型" min-width="180">
         <template #default="{ row }">
           <el-tag
@@ -110,12 +115,14 @@
             <div class="hint">自动生成，用于接口调用标识，不可自定义</div>
           </el-form-item>
           <el-form-item label="AppKey">
-            <el-input v-model="form.app_key" readonly>
-              <template #append>
-                <el-button @click="onCopy(form.app_key)">复制</el-button>
-                <el-button type="warning" @click="onRegenerate">重新生成</el-button>
-              </template>
-            </el-input>
+            <div class="appkey-box">
+              <el-input v-model="form.app_key" readonly>
+                <template #append>
+                  <el-button @click="onCopy(form.app_key)">复制</el-button>
+                </template>
+              </el-input>
+              <el-button type="warning" @click="onRegenerate">重新生成</el-button>
+            </div>
             <div class="hint">彩虹协议与签名校验使用的密钥，请妥善保管</div>
           </el-form-item>
         </template>
@@ -393,6 +400,14 @@ const docsRestQuery = computed(() =>
 }
 .cred-alert {
   margin-bottom: 8px;
+}
+.appkey-box {
+  display: flex;
+  width: 100%;
+  gap: 8px;
+}
+.appkey-box .el-input {
+  flex: 1;
 }
 .muted {
   color: #999;

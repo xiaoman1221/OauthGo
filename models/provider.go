@@ -13,6 +13,7 @@ type Provider struct {
 	RedirectURL  string    `gorm:"size:512" json:"redirect_url"`
 	Config       string    `gorm:"type:text" json:"config"` // 扩展配置（JSON）
 	Enabled      bool      `gorm:"default:false" json:"enabled"`
+	MainSite     bool      `gorm:"default:true" json:"main_site"` // 是否用于主站登录页
 	Sort         int       `json:"sort"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`

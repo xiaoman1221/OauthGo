@@ -3,7 +3,7 @@
     <template #header>
       <div class="card-header">
         <span>第三方登录渠道</span>
-        <span class="tip">配置中国大陆主流登录渠道（对齐 Casdoor），登录页会自动展示已启用渠道</span>
+        <span class="tip">配置登录渠道，登录页会自动展示已启用且「应用于主站」的渠道</span>
       </div>
     </template>
 
@@ -21,9 +21,17 @@
         </template>
       </el-table-column>
       <el-table-column prop="client_id" label="ClientID / AppID" min-width="160" show-overflow-tooltip />
-      <el-table-column label="回调地址" min-width="180">
+      <el-table-column label="回调地址" min-width="200">
         <template #default="{ row }">
-          <span class="callback">{{ row.redirect_url || '未设置（默认使用 HOST 拼接）' }}</span>
+          <span v-if="noCallback(row.name)" class="callback">前端 code 登录，无需回调</span>
+          <span v-else class="callback">{{ row.callback_url }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="主站" width="70">
+        <template #default="{ row }">
+          <el-tag size="small" :type="row.main_site ? 'success' : 'info'">
+            {{ row.main_site ? '启用' : '停用' }}
+          </el-tag>
         </template>
       </el-table-column>
       <el-table-column label="状态" width="80">
@@ -38,57 +46,58 @@
       </el-table-column>
     </el-table>
 
-    <el-dialog v-model="dialogVisible" :title="`配置「${form.display_name}」渠道`" width="560px">
-      <el-form :model="form" label-width="130px">
+    <el-dialog v-model="dialogVisible" :title="`配置「${form.display_name}」渠道`" width="600px">
+      <el-alert type="info" :closable="false" class="tips">
+        <div class="tips-body">
+          <span class="tips-text">{{ schema.tips }}</span>
+          <el-link v-if="schema.registerUrl" type="primary" :href="schema.registerUrl" target="_blank">
+            {{ schema.registerLabel || '接入地址' }} →
+          </el-link>
+        </div>
+      </el-alert>
+
+      <el-form :model="form" label-width="130px" class="channel-form">
         <el-form-item label="启用">
           <el-switch v-model="form.enabled" />
+          <span class="switch-tip">开启后该渠道可发起登录</span>
         </el-form-item>
-        <el-form-item label="ClientID">
-          <el-input v-model="form.client_id" placeholder="AppID / ClientID / appid" />
+        <el-form-item label="应用于主站登录">
+          <el-switch v-model="form.main_site" />
+          <span class="switch-tip">开启后展示在主站登录页</span>
         </el-form-item>
-        <el-form-item label="ClientSecret">
+
+        <el-form-item :label="schema.idLabel">
+          <el-input v-model="form.client_id" :placeholder="schema.idPlaceholder" />
+        </el-form-item>
+        <el-form-item :label="schema.secretLabel">
           <el-input v-model="form.client_secret" type="password" show-password
-            :placeholder="form.client_secret ? '留空则不修改' : 'AppSecret / ClientSecret'" />
+            :placeholder="form.client_secret ? '留空则不修改' : schema.secretPlaceholder" />
         </el-form-item>
+
         <el-form-item label="回调地址">
-          <el-input v-model="form.redirect_url"
-            placeholder="留空则使用 HOST 自动拼接 /api/oauth/xxx/callback" />
+          <el-input :model-value="callbackUrl" readonly>
+            <template #append>
+              <el-button :data-clipboard-text="callbackUrl" @click="copyCallback">复制</el-button>
+            </template>
+          </el-input>
+          <div class="field-tip">由系统根据 HOST 自动拼接，不支持自定义</div>
         </el-form-item>
 
-        <template v-if="form.name === 'wecom'">
-          <el-divider content-position="left">企业微信扩展配置</el-divider>
-          <el-form-item label="AgentId">
-            <el-input v-model="config.agent_id" placeholder="企业自建应用 AgentId" />
-          </el-form-item>
-          <el-form-item label="CorpId">
-            <el-input v-model="config.corp_id" placeholder="企业 ID（第三方应用时为服务商 corpid）" />
-          </el-form-item>
-          <el-form-item label="登录类型">
-            <el-select v-model="config.login_type">
-              <el-option label="企业自建 (CorpApp)" value="CorpApp" />
-              <el-option label="第三方 (ServiceApp)" value="ServiceApp" />
+        <template v-if="schema.configFields.length">
+          <el-divider content-position="left">{{ schema.divider }}</el-divider>
+          <el-form-item v-for="f in schema.configFields" :key="f.key" :label="f.label">
+            <el-select v-if="f.type === 'select'" v-model="config[f.key]">
+              <el-option v-for="o in f.options" :key="o.value" :label="o.label" :value="o.value" />
             </el-select>
-          </el-form-item>
-        </template>
-
-        <template v-else-if="form.name === 'alipay'">
-          <el-divider content-position="left">支付宝扩展配置</el-divider>
-          <el-form-item label="应用私钥">
-            <el-input v-model="config.app_private_key" type="textarea" :rows="5"
-              placeholder="RSA2 应用私钥（PKCS1 或 PKCS8 PEM 格式）" />
-          </el-form-item>
-        </template>
-
-        <template v-else>
-          <el-divider content-position="left">扩展配置（JSON）</el-divider>
-          <el-form-item label="Config">
-            <el-input v-model="configText" type="textarea" :rows="5"
-              placeholder='{"key":"value"}' />
+            <el-input v-else-if="f.type === 'textarea'" v-model="config[f.key]" type="textarea"
+              :rows="f.rows || 5" :placeholder="f.placeholder" />
+            <el-input v-else v-model="config[f.key]" :placeholder="f.placeholder" />
           </el-form-item>
         </template>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button :loading="testing" @click="onTest">测试渠道</el-button>
         <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
       </template>
     </el-dialog>
@@ -96,18 +105,30 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { listProviders, updateProvider } from '../api/modules'
+import { listProviders, updateProvider, testProvider } from '../api/modules'
+import { channelSchema } from '../utils/providerDocs'
 
 const providers = ref([])
 const dialogVisible = ref(false)
 const saving = ref(false)
+const testing = ref(false)
 const form = ref({})
 const config = ref({})
-const configText = ref('')
+
+const schema = computed(() => channelSchema(form.value.name))
+
+const callbackUrl = computed(() => {
+  if (!form.value.name) return ''
+  return form.value.callback_url || `${window.location.origin}/api/oauth/${form.value.name}/callback`
+})
 
 onMounted(load)
+
+function noCallback(name) {
+  return name === 'wechat_miniprogram'
+}
 
 async function load() {
   const data = await listProviders()
@@ -115,14 +136,39 @@ async function load() {
 }
 
 function openDialog(row) {
-  form.value = { ...row }
+  form.value = {
+    ...row,
+    client_secret: row.client_secret || '',
+    main_site: !!row.main_site
+  }
   try {
     config.value = row.config ? JSON.parse(row.config) : {}
   } catch (e) {
     config.value = {}
   }
-  configText.value = JSON.stringify(config.value, null, 2)
   dialogVisible.value = true
+}
+
+function copyCallback() {
+  navigator.clipboard?.writeText(callbackUrl.value)
+  ElMessage.success('回调地址已复制')
+}
+
+async function onTest() {
+  testing.value = true
+  try {
+    const payload = {
+      client_id: form.value.client_id,
+      config: JSON.stringify(config.value)
+    }
+    if (form.value.client_secret) {
+      payload.client_secret = form.value.client_secret
+    }
+    const data = await testProvider(form.value.name, payload)
+    ElMessage.success(data.message || '配置有效')
+  } finally {
+    testing.value = false
+  }
 }
 
 async function onSave() {
@@ -130,21 +176,12 @@ async function onSave() {
   try {
     const payload = {
       client_id: form.value.client_id,
-      redirect_url: form.value.redirect_url,
-      enabled: form.value.enabled
+      enabled: !!form.value.enabled,
+      main_site: !!form.value.main_site,
+      config: JSON.stringify(config.value)
     }
     if (form.value.client_secret) {
       payload.client_secret = form.value.client_secret
-    }
-    payload.config = JSON.stringify(config.value)
-    if (form.value.name !== 'wecom' && form.value.name !== 'alipay') {
-      try {
-        payload.config = configText.value ? JSON.stringify(JSON.parse(configText.value)) : ''
-      } catch (e) {
-        ElMessage.error('扩展配置必须是合法的 JSON')
-        saving.value = false
-        return
-      }
     }
     await updateProvider(form.value.name, payload)
     ElMessage.success('保存成功')
@@ -181,5 +218,29 @@ async function onSave() {
 .callback {
   font-size: 12px;
   color: #606266;
+  word-break: break-all;
+}
+.tips {
+  margin-bottom: 16px;
+}
+.tips-body {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.tips-text {
+  flex: 1;
+  line-height: 1.6;
+}
+.channel-form .switch-tip {
+  margin-left: 10px;
+  font-size: 12px;
+  color: #909399;
+}
+.field-tip {
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.5;
 }
 </style>

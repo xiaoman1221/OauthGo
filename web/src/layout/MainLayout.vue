@@ -37,6 +37,14 @@
           <el-icon><User /></el-icon>
           <span>用户管理</span>
         </el-menu-item>
+        <el-sub-menu index="/docs">
+          <template #title>
+            <el-icon><Document /></el-icon>
+            <span>文档中心</span>
+          </template>
+          <el-menu-item index="/docs/providers">第三方渠道接入</el-menu-item>
+          <el-menu-item index="/docs/service">本站服务文档</el-menu-item>
+        </el-sub-menu>
       </el-menu>
     </el-aside>
 
@@ -69,7 +77,7 @@ import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import {
-  DataBoard, Grid, List, Bell, Link, Setting, User, ArrowDown
+  DataBoard, Grid, List, Bell, Link, Setting, User, ArrowDown, Document
 } from '@element-plus/icons-vue'
 import { useUserStore } from '../stores/user'
 
