@@ -1,9 +1,12 @@
 name: Release
 
-# 推送形如 v1.0.0 的版本标签时触发：
-#   git tag v1.0.0 && git push origin v1.0.0
+# 触发方式（满足其一即可）：
+#   1. 推送形如 v1.0.0 的标签：git tag v1.0.0 && git push github v1.0.0
+#   2. 推送 master 分支且提交信息包含版本号（如 "release：v1.0.0"）
 on:
   push:
+    branches:
+      - master
     tags:
       - 'v[0-9]*'
 
@@ -12,21 +15,33 @@ permissions:
   packages: write
 
 jobs:
-  # 校验版本号格式（vX.Y.Z），不符合则直接失败
-  preflight:
+  # 解析版本号：标签优先，否则从提交信息中匹配 vX.Y.Z
+  resolve-version:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.detect.outputs.version }}
     steps:
-      - name: Validate version tag (vX.Y.Z)
+      - uses: actions/checkout@v4
+      - name: Detect version
+        id: detect
         run: |
-          if ! [[ "${{ github.ref_name }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::版本号格式不正确：${{ github.ref_name }}，应为 v1.0.0 形式"
-            exit 1
+          VERSION=""
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            VERSION="${{ github.ref_name }}"
+          else
+            VERSION=$(git log -1 --format=%s | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -n1 || true)
           fi
-          echo "版本号：${{ github.ref_name }}"
+          if [[ -n "$VERSION" ]] && [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "检测到版本号：$VERSION"
+          else
+            echo "未检测到版本号，跳过发布"
+          fi
 
   # 构建前端产物（web/dist），供各平台编译复用
   frontend:
-    needs: preflight
+    needs: resolve-version
+    if: needs.resolve-version.outputs.version != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -48,7 +63,8 @@ jobs:
 
   # 交叉编译主流系统（Windows / Linux / macOS，amd64 + arm64）
   build:
-    needs: [preflight, frontend]
+    needs: [resolve-version, frontend]
+    if: needs.resolve-version.outputs.version != ''
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -95,7 +111,8 @@ jobs:
 
   # 创建 GitHub Release 并附上所有平台的编译产物
   release:
-    needs: build
+    needs: [build, resolve-version]
+    if: needs.resolve-version.outputs.version != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -105,13 +122,15 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ needs.resolve-version.outputs.version }}
+          target_commitish: ${{ github.sha }}
           files: oauthgo-*
           generate_release_notes: true
 
   # 构建多架构 Docker 镜像，发布到 GitHub Container Registry 与 Docker Hub
   docker:
-    needs: preflight
+    needs: resolve-version
+    if: needs.resolve-version.outputs.version != ''
     runs-on: ubuntu-latest
     env:
       DH_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -139,7 +158,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/oauthgo:${{ github.ref_name }}
+            ghcr.io/${{ github.repository_owner }}/oauthgo:${{ needs.resolve-version.outputs.version }}
             ghcr.io/${{ github.repository_owner }}/oauthgo:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -151,6 +170,6 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ env.DH_USERNAME }}/oauthgo:${{ github.ref_name }}
+            ${{ env.DH_USERNAME }}/oauthgo:${{ needs.resolve-version.outputs.version }}
             ${{ env.DH_USERNAME }}/oauthgo:latest
           cache-from: type=gha
