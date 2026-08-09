@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/smtp"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -21,6 +24,12 @@ type ChannelConfig struct {
 	Password string   `json:"password"`
 	From     string   `json:"from"`
 	To       []string `json:"to"`
+
+	// bark 配置
+	BarkServer string `json:"bark_server"`
+	BarkKey    string `json:"bark_key"`
+	BarkGroup  string `json:"bark_group"`
+	BarkSound  string `json:"bark_sound"`
 }
 
 // SendWebhook 发送 Webhook 通知
@@ -53,6 +62,53 @@ func SendEmail(host string, port int, username, password, from string, to []stri
 	msg := []byte(fmt.Sprintf("To: %s\r\nSubject: %s\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s",
 		joinEmails(to), subject, content))
 	return smtp.SendMail(addr, auth, from, to, msg)
+}
+
+// SendBark 发送 Bark 推送通知（iOS）
+// server 为空时使用官方服务器 https://api.day.app
+func SendBark(server, key, group, sound, title, body string) error {
+	if key == "" {
+		return fmt.Errorf("Bark Device Key 未配置")
+	}
+	if server == "" {
+		server = "https://api.day.app"
+	}
+	server = strings.TrimRight(server, "/")
+
+	form := url.Values{}
+	form.Set("title", title)
+	form.Set("body", body)
+	form.Set("device_key", key)
+	if group != "" {
+		form.Set("group", group)
+	}
+	if sound != "" {
+		form.Set("sound", sound)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.PostForm(server+"/push", form)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("Bark 服务器返回异常状态码: %d: %s", resp.StatusCode, truncateStr(string(b)))
+	}
+
+	var result struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return err
+	}
+	if result.Code != 200 {
+		return fmt.Errorf("Bark 推送失败: %s", result.Message)
+	}
+	return nil
 }
 
 func joinEmails(emails []string) string {

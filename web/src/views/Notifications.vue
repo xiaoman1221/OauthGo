@@ -13,8 +13,8 @@
         <el-table-column prop="name" label="名称" min-width="120" />
         <el-table-column prop="type" label="类型" width="110">
           <template #default="{ row }">
-            <el-tag :type="row.type === 'email' ? 'primary' : 'success'">
-              {{ row.type === 'email' ? '邮件' : 'Webhook' }}
+            <el-tag :type="typeTag(row.type)">
+              {{ typeName(row.type) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -75,6 +75,7 @@
           <el-radio-group v-model="form.type">
             <el-radio value="email">邮件</el-radio>
             <el-radio value="webhook">Webhook</el-radio>
+            <el-radio value="bark">Bark</el-radio>
           </el-radio-group>
         </el-form-item>
 
@@ -103,6 +104,21 @@
         <template v-if="form.type === 'webhook'">
           <el-form-item label="Webhook URL">
             <el-input v-model="form.config.url" placeholder="https://example.com/hook" />
+          </el-form-item>
+        </template>
+
+        <template v-if="form.type === 'bark'">
+          <el-form-item label="服务器地址">
+            <el-input v-model="form.config.bark_server" placeholder="https://api.day.app（默认）" />
+          </el-form-item>
+          <el-form-item label="Device Key" required>
+            <el-input v-model="form.config.bark_key" placeholder="Bark 应用中的设备 Key" />
+          </el-form-item>
+          <el-form-item label="分组">
+            <el-input v-model="form.config.bark_group" placeholder="可选，如 OauthGo" />
+          </el-form-item>
+          <el-form-item label="提示音">
+            <el-input v-model="form.config.bark_sound" placeholder="可选，如 default / telegraph / minuet" />
           </el-form-item>
         </template>
 
@@ -143,7 +159,11 @@ function emptyForm() {
     name: '',
     type: 'webhook',
     enabled: true,
-    config: { url: '', smtp_host: '', smtp_port: 25, username: '', password: '', from: '', to: [] }
+    config: {
+      url: '',
+      smtp_host: '', smtp_port: 25, username: '', password: '', from: '', to: [],
+      bark_server: 'https://api.day.app', bark_key: '', bark_group: '', bark_sound: ''
+    }
   }
 }
 
@@ -201,6 +221,14 @@ async function onDelete(row) {
 
 function statusType(status) {
   return ['info', 'success', 'danger'][status] || 'info'
+}
+
+function typeName(type) {
+  return { email: '邮件', webhook: 'Webhook', bark: 'Bark' }[type] || type
+}
+
+function typeTag(type) {
+  return { email: 'primary', webhook: 'success', bark: 'warning' }[type] || 'info'
 }
 </script>
 

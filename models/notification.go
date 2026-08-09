@@ -6,7 +6,7 @@ import "time"
 type NotificationChannel struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
 	Name      string    `gorm:"size:128;not null" json:"name"`
-	Type      string    `gorm:"size:32;not null" json:"type"` // email / webhook
+	Type      string    `gorm:"size:32;not null" json:"type"` // email / webhook / bark
 	Config    string    `gorm:"type:text" json:"config"`      // 渠道配置（JSON）
 	Enabled   bool      `gorm:"default:true" json:"enabled"`
 	CreatedAt time.Time `json:"created_at"`

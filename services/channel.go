@@ -28,6 +28,8 @@ func SendByChannel(channel models.NotificationChannel, subject, content string) 
 	case "email":
 		return SendEmail(cfg.SMTPHost, cfg.SMTPPort, cfg.Username, cfg.Password,
 			cfg.From, cfg.To, subject, content)
+	case "bark":
+		return SendBark(cfg.BarkServer, cfg.BarkKey, cfg.BarkGroup, cfg.BarkSound, subject, content)
 	default:
 		return &UnsupportedChannelError{Type: channel.Type}
 	}
