@@ -121,7 +121,7 @@
                   <el-button @click="onCopy(form.app_key)">复制</el-button>
                 </template>
               </el-input>
-              <el-button type="warning" @click="onRegenerate">重新生成</el-button>
+              <el-button type="warning" :loading="regenerating" @click="onRegenerate">重新生成</el-button>
             </div>
             <div class="hint">彩虹协议与签名校验使用的密钥，请妥善保管</div>
           </el-form-item>
@@ -221,6 +221,7 @@ const docsVisible = ref(false)
 const docsTab = ref('rainbow')
 const docsApp = ref({})
 const saving = ref(false)
+const regenerating = ref(false)
 const form = ref({})
 
 const baseUrl = window.location.origin
@@ -320,7 +321,16 @@ async function onRegenerate() {
     '提示',
     { type: 'warning' }
   )
-  form.value.regenerate_key = true
+  regenerating.value = true
+  try {
+    const res = await updateApp(form.value.id, { ...form.value, regenerate_key: true })
+    form.value.app_key = res.app_key
+    form.value.regenerate_key = false
+    ElMessage.success('AppKey 已重新生成')
+    load()
+  } finally {
+    regenerating.value = false
+  }
 }
 
 function openDocs(row) {
