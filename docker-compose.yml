@@ -1,0 +1,16 @@
+services:
+  oauthgo:
+    image: xiaoman1221/oauthgo:latest
+    container_name: oauthgo
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      PORT: "8080"
+      GIN_MODE: "${GIN_MODE:-release}"
+      HOST: "${HOST:-http://localhost:8080}"
+      JWT_KEY: "${JWT_KEY:-change-me-to-a-random-secret}"
+      DB_PATH: /app/data/data.db
+      TZ: "${TZ:-Asia/Shanghai}"
+    volumes:
+      - ./data:/app/data

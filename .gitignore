@@ -1,0 +1,19 @@
+.env
+*.db
+*.db-shm
+*.db-wal
+
+# 前端
+web/node_modules/
+web/dist/
+
+# Go
+bin/
+build/
+
+# IDE
+.idea/
+.vscode/
+
+# SQLite
+./data.db

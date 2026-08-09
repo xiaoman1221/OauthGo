@@ -1,0 +1,483 @@
+openapi: 3.0.3
+info:
+  title: OauthGo 第三方登录聚合接口
+  description: |
+    为其他目标站点提供第三方登录聚合服务，包含两套协议：
+
+    - **彩虹聚合登录协议**（`GET /api/connect.php`）：兼容彩虹聚合登录（u.cccyun.cc）的接入方式。
+    - **REST 风格接口**（`/api/v1/oauth/*`）：自研 REST 接口，登录接口明文校验，信息接口使用服务端 MD5 签名校验。
+
+    接入前请先在平台注册应用，获取 `appid` / `appkey`，并按需开启登录类型与回调域名白名单。
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: 本地环境，请按实际部署地址替换
+tags:
+  - name: 彩虹聚合登录协议
+    description: 兼容彩虹聚合登录（u.cccyun.cc）的协议接口，统一返回 {code, msg, ...}
+  - name: REST 接口
+    description: 自研 REST 风格接口，统一返回 {code, message, data}
+paths:
+  /connect.php:
+    get:
+      tags:
+        - 彩虹聚合登录协议
+      operationId: rainbowConnect
+      summary: 彩虹聚合协议入口（act=login | callback | query）
+      description: |
+        彩虹官方约定访问根路径 `/connect.php`（`/api/connect.php` 为等价别名）。
+        支持 GET 与 POST（POST 时参数可放查询串或 `application/x-www-form-urlencoded` 表单体）。
+        通过 `act` 参数区分三种动作：
+
+        - `login`：发起登录，返回第三方授权跳转地址 `url`（含一次性 `state`）。
+        - `callback`：登录成功后用回调携带的 `code` 换取用户信息（`code` 一次性）。
+        - `query`：按 `social_uid` 查询最近一次登录的用户信息。
+
+        彩虹登录类型与渠道对应关系：`qq`→QQ、`wx`→微信、`alipay`→支付宝、`sina`→微博、
+        `baidu`→百度、`douyin`→抖音、`dingtalk`→钉钉、`gitee`→Gitee、`wework`→企业微信。
+
+        登录完成后平台会 302 跳回 `redirect_uri`，携带 `type`、`code` 参数。
+      parameters:
+        - name: act
+          in: query
+          required: true
+          description: 动作类型
+          schema:
+            type: string
+            enum: [login, callback, query]
+        - name: appid
+          in: query
+          required: true
+          description: 应用 ID
+          schema:
+            type: string
+        - name: appkey
+          in: query
+          required: true
+          description: 应用密钥
+          schema:
+            type: string
+        - name: type
+          in: query
+          required: true
+          description: 彩虹登录类型（qq/wx/alipay/sina/baidu/douyin/dingtalk/gitee/wework）
+          schema:
+            type: string
+        - name: redirect_uri
+          in: query
+          required: false
+          description: 登录完成后的回跳地址（act=login 必填，域名须在应用白名单内）
+          schema:
+            type: string
+            format: uri
+        - name: code
+          in: query
+          required: false
+          description: 授权码（act=callback 必填，一次性）
+          schema:
+            type: string
+        - name: social_uid
+          in: query
+          required: false
+          description: 第三方平台用户唯一标识（act=query 必填）
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功返回 code=0；失败返回 code 非 0 并携带 msg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RainbowResponse'
+              examples:
+                login:
+                  summary: act=login 返回
+                  value:
+                    code: 0
+                    msg: succ
+                    type: gitee
+                    url: https://gitee.com/oauth/authorize?client_id=xxx&redirect_uri=xxx&state=xxx
+                    qrcode: ''
+                callback:
+                  summary: act=callback 返回
+                  value:
+                    code: 0
+                    msg: succ
+                    type: gitee
+                    access_token: xxxx
+                    social_uid: '123456'
+                    faceimg: https://avatars.githubusercontent.com/u/xxx
+                    nickname: 张三
+                    location: 广东深圳
+                    gender: 男
+                    ip: 1.2.3.4
+                callback-pending:
+                  summary: act=callback 未完成登录（code 无效或已使用）
+                  value:
+                    code: 2
+                    msg: 未完成登录
+                    type: gitee
+                query:
+                  summary: act=query 返回
+                  value:
+                    code: 0
+                    msg: succ
+                    type: gitee
+                    social_uid: '123456'
+                    faceimg: https://avatars.githubusercontent.com/u/xxx
+                    nickname: 张三
+                    location: 广东深圳
+                    ip: 1.2.3.4
+                failed:
+                  summary: 校验失败
+                  value:
+                    code: 1
+                    msg: appkey 校验失败
+                    type: gitee
+    post:
+      tags:
+        - 彩虹聚合登录协议
+      operationId: rainbowConnectPost
+      summary: 彩虹聚合协议入口（POST，参数可放查询串或表单体）
+      description: |
+        与 GET 行为完全一致，兼容彩虹官方客户端以 POST 方式调用。
+        `act` 值区分 login / callback / query 三种动作，参数同 GET（查询串或表单体均可）。
+      parameters:
+        - name: act
+          in: query
+          required: true
+          description: 动作类型
+          schema:
+            type: string
+            enum: [login, callback, query]
+        - name: appid
+          in: query
+          required: true
+          description: 应用 ID
+          schema:
+            type: string
+        - name: appkey
+          in: query
+          required: true
+          description: 应用密钥
+          schema:
+            type: string
+        - name: type
+          in: query
+          required: true
+          description: 彩虹登录类型（qq/wx/alipay/sina/baidu/douyin/dingtalk/gitee/wework）
+          schema:
+            type: string
+        - name: redirect_uri
+          in: query
+          required: false
+          description: 登录完成后的回跳地址（act=login 必填，域名须在应用白名单内）
+          schema:
+            type: string
+            format: uri
+        - name: code
+          in: query
+          required: false
+          description: 授权码（act=callback 必填，一次性）
+          schema:
+            type: string
+        - name: social_uid
+          in: query
+          required: false
+          description: 第三方平台用户唯一标识（act=query 必填）
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功返回 code=0；失败返回 code 非 0 并携带 msg（响应结构与 GET 一致）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RainbowResponse'
+  /api/v1/oauth/login:
+    get:
+      tags:
+        - REST 接口
+      operationId: restLoginGet
+      summary: 获取第三方登录跳转地址（GET）
+      description: 校验 appid/appkey 后返回第三方授权跳转地址，登录完成后 302 跳回 redirect_uri 并携带 type、code。
+      parameters:
+        - name: appid
+          in: query
+          required: true
+          description: 应用 ID
+          schema:
+            type: string
+        - name: appkey
+          in: query
+          required: true
+          description: 应用密钥
+          schema:
+            type: string
+        - name: type
+          in: query
+          required: true
+          description: 登录类型（如 gitee、qq、wx）
+          schema:
+            type: string
+        - name: redirect_uri
+          in: query
+          required: true
+          description: 登录完成后的回跳地址（域名须在应用白名单内）
+          schema:
+            type: string
+            format: uri
+      responses:
+        '200':
+          description: 成功返回 code=0，data 携带跳转地址
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestResponse'
+              examples:
+                success:
+                  summary: 成功
+                  value:
+                    code: 0
+                    message: success
+                    data:
+                      url: https://gitee.com/oauth/authorize?client_id=xxx&redirect_uri=xxx&state=xxx
+                      type: gitee
+                failed:
+                  summary: 校验失败
+                  value:
+                    code: 1
+                    message: appkey 校验失败
+    post:
+      tags:
+        - REST 接口
+      operationId: restLoginPost
+      summary: 获取第三方登录跳转地址（POST）
+      description: 请求体与 GET 查询参数等价。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestLoginRequest'
+      responses:
+        '200':
+          description: 成功返回 code=0，data 携带跳转地址
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestResponse'
+  /api/v1/oauth/userinfo:
+    post:
+      tags:
+        - REST 接口
+      operationId: restUserinfo
+      summary: 使用 code 换取用户信息
+      description: |
+        服务端签名校验。签名规则：将 `appid`、`type`、`code` 三个参数按 key 升序拼接为 `k1=v1&k2=v2`，
+        末尾追加 `&key=<appkey>` 后整体 MD5（小写）。
+
+        示例：`sign = md5("appid=xxx&code=ccc&type=gitee&key=<appkey>")`
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestUserinfoRequest'
+      responses:
+        '200':
+          description: 成功返回用户信息
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestResponse'
+              examples:
+                success:
+                  summary: 成功
+                  value:
+                    code: 0
+                    message: success
+                    data:
+                      type: gitee
+                      openid: '123456'
+                      unionid: 'u_8888'
+                      nickname: 张三
+                      avatar: https://avatars.githubusercontent.com/u/xxx
+                      email: zhangsan@example.com
+                      gender: 男
+                      location: 广东深圳
+                      access_token: xxxx
+                      ip: 1.2.3.4
+                failed:
+                  summary: 签名校验失败
+                  value:
+                    code: 1
+                    message: 签名校验失败
+                pending:
+                  summary: code 无效或已使用
+                  value:
+                    code: 2
+                    message: 登录未完成
+  /api/v1/oauth/query:
+    post:
+      tags:
+        - REST 接口
+      operationId: restQuery
+      summary: 按第三方 UID 查询用户信息
+      description: |
+        服务端签名校验。签名规则：将 `appid`、`type`、`social_uid` 三个参数按 key 升序拼接为 `k1=v1&k2=v2`，
+        末尾追加 `&key=<appkey>` 后整体 MD5（小写）。
+
+        示例：`sign = md5("appid=xxx&social_uid=123456&type=gitee&key=<appkey>")`
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestQueryRequest'
+      responses:
+        '200':
+          description: 成功返回用户信息
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestResponse'
+              examples:
+                success:
+                  summary: 成功
+                  value:
+                    code: 0
+                    message: success
+                    data:
+                      type: gitee
+                      openid: '123456'
+                      nickname: 张三
+                      avatar: https://avatars.githubusercontent.com/u/xxx
+                      location: 广东深圳
+                      ip: 1.2.3.4
+                failed:
+                  summary: 签名校验失败
+                  value:
+                    code: 1
+                    message: 签名校验失败
+  /api/oauth/providers:
+    get:
+      tags:
+        - REST 接口
+      operationId: listProviders
+      summary: 获取已启用的登录渠道列表
+      description: 公开接口，无需鉴权，用于在登录页渲染可用的第三方登录按钮。
+      responses:
+        '200':
+          description: 渠道列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProviderInfo'
+components:
+  schemas:
+    RainbowResponse:
+      type: object
+      description: 彩虹协议统一响应
+      required: [code, msg]
+      properties:
+        code:
+          type: integer
+          description: 0 成功；1 失败；2 登录未完成
+          example: 0
+        msg:
+          type: string
+          description: 提示信息
+          example: succ
+        type:
+          type: string
+          description: 登录类型
+          example: gitee
+      additionalProperties: true
+    RestResponse:
+      type: object
+      description: REST 接口统一响应
+      required: [code, message]
+      properties:
+        code:
+          type: integer
+          description: 0 成功；1 失败；2 登录未完成
+          example: 0
+        message:
+          type: string
+          description: 提示信息
+          example: success
+        data:
+          type: object
+          description: 业务数据（各接口不同）
+          additionalProperties: true
+    RestLoginRequest:
+      type: object
+      description: 发起第三方登录请求体
+      required: [appid, appkey, type, redirect_uri]
+      properties:
+        appid:
+          type: string
+          description: 应用 ID
+        appkey:
+          type: string
+          description: 应用密钥
+        type:
+          type: string
+          description: 登录类型（如 gitee、qq、wx）
+        redirect_uri:
+          type: string
+          description: 登录完成后的回跳地址（域名须在应用白名单内）
+          format: uri
+    RestUserinfoRequest:
+      type: object
+      description: 用 code 换取用户信息请求体
+      required: [appid, code, type, sign]
+      properties:
+        appid:
+          type: string
+          description: 应用 ID
+        code:
+          type: string
+          description: 登录回调携带的授权码（一次性）
+        type:
+          type: string
+          description: 登录类型
+        sign:
+          type: string
+          description: MD5 签名，见接口说明
+    RestQueryRequest:
+      type: object
+      description: 按第三方 UID 查询用户信息请求体
+      required: [appid, type, social_uid, sign]
+      properties:
+        appid:
+          type: string
+          description: 应用 ID
+        type:
+          type: string
+          description: 登录类型
+        social_uid:
+          type: string
+          description: 第三方平台用户唯一标识
+        sign:
+          type: string
+          description: MD5 签名，见接口说明
+    ProviderInfo:
+      type: object
+      description: 登录渠道信息
+      properties:
+        name:
+          type: string
+          description: 渠道标识（如 gitee、qq、wx）
+          example: gitee
+        display_name:
+          type: string
+          description: 展示名称
+          example: Gitee
+        category:
+          type: string
+          description: 渠道分类
+          example: social

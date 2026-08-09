@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OauthGo 第三方登录接入文档</title>
+<style>
+  :root {
+    --dark: #001529;
+    --dark2: #10243e;
+    --green: #3bb893;
+    --green2: #1f4037;
+    --text: #2c3e50;
+    --muted: #8a94a6;
+    --border: #e8ecf1;
+    --code-bg: #0f2236;
+    --code-text: #d7e3f0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    color: var(--text);
+    background: #f5f7fa;
+  }
+  .header {
+    background: linear-gradient(120deg, var(--dark2), var(--green2));
+    color: #fff;
+    padding: 32px 24px 24px;
+  }
+  .header .wrap { max-width: 1080px; margin: 0 auto; }
+  .header h1 { margin: 0 0 8px; font-size: 26px; }
+  .header p { margin: 0 0 16px; color: #c7d5e4; font-size: 14px; line-height: 1.8; }
+  .header .links a {
+    display: inline-block;
+    margin-right: 12px;
+    padding: 7px 16px;
+    border-radius: 6px;
+    background: var(--green);
+    color: #fff;
+    text-decoration: none;
+    font-size: 13px;
+  }
+  .header .links a.ghost {
+    background: rgba(255,255,255,.14);
+    border: 1px solid rgba(255,255,255,.35);
+  }
+  .tabs {
+    max-width: 1080px;
+    margin: 20px auto 0;
+    padding: 0 24px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .tab {
+    padding: 8px 18px;
+    border-radius: 8px 8px 0 0;
+    background: #e3e8ef;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 14px;
+    border: none;
+  }
+  .tab.active { background: #fff; color: var(--green2); font-weight: 600; }
+  .container {
+    max-width: 1080px;
+    margin: 0 auto 40px;
+    padding: 0 24px 40px;
+  }
+  .panel {
+    display: none;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 0 10px 10px 10px;
+    padding: 28px 32px;
+  }
+  .panel.active { display: block; }
+  h2 { font-size: 20px; margin: 28px 0 12px; color: var(--dark2); }
+  h2:first-child { margin-top: 0; }
+  h3 { font-size: 15px; margin: 22px 0 10px; color: var(--green2); }
+  p, li { font-size: 14px; line-height: 1.9; }
+  .alert {
+    border-left: 4px solid var(--green);
+    background: #f0faf6;
+    padding: 10px 14px;
+    border-radius: 4px;
+    font-size: 13px;
+    line-height: 1.9;
+    color: #20503f;
+  }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; margin: 12px 0 20px; }
+  th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
+  th { background: #f7f9fb; color: var(--dark2); white-space: nowrap; }
+  td code { white-space: nowrap; }
+  code {
+    background: #eef2f6;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-family: "Cascadia Code", Consolas, monospace;
+    font-size: 12.5px;
+    color: #c0392b;
+  }
+  pre {
+    position: relative;
+    background: var(--code-bg);
+    color: var(--code-text);
+    border-radius: 8px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.7;
+    margin: 10px 0 18px;
+  }
+  pre code { background: transparent; color: inherit; padding: 0; font-size: 13px; }
+  .copy-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: rgba(255,255,255,.12);
+    border: 1px solid rgba(255,255,255,.25);
+    color: #fff;
+    border-radius: 5px;
+    padding: 3px 10px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .copy-btn:hover { background: rgba(255,255,255,.22); }
+  .flow { margin: 16px 0 22px; }
+  .flow .step {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .flow .num {
+    flex: 0 0 26px;
+    height: 26px;
+    line-height: 26px;
+    text-align: center;
+    background: var(--green);
+    color: #fff;
+    border-radius: 50%;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .flow .txt { font-size: 13.5px; line-height: 1.8; padding-top: 2px; }
+  .divider { border: none; border-top: 1px solid var(--border); margin: 30px 0; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="wrap">
+    <h1>OauthGo 第三方登录接入文档</h1>
+    <p>为其他目标站点提供第三方登录聚合服务。以下两套接口可任选其一接入：<br>
+      彩虹聚合登录协议（/connect.php，兼容彩虹官方）与自研 REST 风格接口（/api/v1/oauth/*）。</p>
+    <div class="links">
+      <a href="/docs/swagger">在线调试（Swagger UI）</a>
+      <a class="ghost" href="/docs/openapi.yaml" target="_blank">OpenAPI 规范文件</a>
+    </div>
+  </div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" data-tab="rainbow">彩虹聚合登录协议</button>
+  <button class="tab" data-tab="rest">REST 风格接口</button>
+</div>
+
+<div class="container">
+
+  <!-- ===================== 彩虹协议 ===================== -->
+  <div class="panel active" id="rainbow">
+    <h2>彩虹聚合登录协议</h2>
+    <div class="alert">
+      兼容彩虹聚合登录（u.cccyun.cc）的接入方式，目标站点通过 <code>appid</code> / <code>appkey</code>
+      调用本平台接口完成第三方登录。统一返回 <code>{code, msg, ...}</code>：
+      <code>code=0</code> 成功，<code>code=1</code> 失败，<code>code=2</code> 登录未完成。
+      接口访问根路径 <code>/connect.php</code>（<code>/api/connect.php</code> 为等价别名），
+      支持 <code>GET</code> / <code>POST</code>，参数可放查询串或 <code>application/x-www-form-urlencoded</code> 表单体。
+    </div>
+
+    <h2>接入流程</h2>
+    <div class="flow">
+      <div class="step"><div class="num">1</div><div class="txt">目标站点跳转 <code>connect.php?act=login</code>，携带 <code>appid/appkey/type/redirect_uri</code>，获取第三方授权地址。</div></div>
+      <div class="step"><div class="num">2</div><div class="txt">目标站点将用户重定向到返回的 <code>url</code>，引导用户在第三方平台完成授权。</div></div>
+      <div class="step"><div class="num">3</div><div class="txt">授权完成后平台 302 跳回 <code>redirect_uri</code>，并携带 <code>type</code>、<code>code</code> 两个参数。</div></div>
+      <div class="step"><div class="num">4</div><div class="txt">目标站点调用 <code>connect.php?act=callback</code>，用 <code>code</code> 换取用户信息（一次性），完成登录。</div></div>
+    </div>
+
+    <h2>接口：/connect.php</h2>
+    <table>
+      <thead><tr><th>参数</th><th>必填</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>act</td><td>是</td><td>动作：<code>login</code> / <code>callback</code> / <code>query</code></td></tr>
+        <tr><td>appid</td><td>是</td><td>应用 ID</td></tr>
+        <tr><td>appkey</td><td>是</td><td>应用密钥</td></tr>
+        <tr><td>type</td><td>是</td><td>登录类型，见下方「类型对照表」</td></tr>
+        <tr><td>redirect_uri</td><td>act=login 时必填</td><td>登录完成后的回跳地址，域名须在应用白名单内</td></tr>
+        <tr><td>code</td><td>act=callback 时必填</td><td>回调携带的授权码（一次性）</td></tr>
+        <tr><td>social_uid</td><td>act=query 时必填</td><td>第三方平台用户唯一标识</td></tr>
+      </tbody>
+    </table>
+
+    <h3>1. 发起登录（act=login）</h3>
+    <pre><code>GET /connect.php?act=login&amp;appid=10001&amp;appkey=your_appkey&amp;type=gitee&amp;redirect_uri=https%3A%2F%2Fexample.com%2Fcallback</code>
+<button class="copy-btn" onclick="copy(this)">复制</button></pre>
+    <pre><code>{ "code": 0, "msg": "succ", "type": "gitee",
+  "url": "https://gitee.com/oauth/authorize?client_id=xxx&amp;redirect_uri=xxx&amp;state=xxx",
+  "qrcode": "" }
+</code><button class="copy-btn" onclick="copy(this)">复制</button></pre>
+    <p>返回的 <code>url</code> 即为第三方授权地址（已附带一次性 <code>state</code>），目标站点直接 302 跳转即可。</p>
+
+    <h3>2. 回调（由平台 302 跳回）</h3>
+    <p>用户完成授权后，平台自动跳转到目标站点的 <code>redirect_uri</code>，并追加以下参数：</p>
+    <pre><code>https://example.com/callback?type=gitee&amp;code=xxxx
+</code><button class="copy-btn" onclick="copy(this)">复制</button></pre>
+
+    <h3>3. 换取用户信息（act=callback）</h3>
+    <pre><code>GET /connect.php?act=callback&amp;appid=10001&amp;appkey=your_appkey&amp;type=gitee&amp;code=xxxx
+</code><button class="copy-btn" onclick="copy(this)">复制</button></pre>
+    <pre><code>{ "code": 0, "msg": "succ", "type": "gitee",
+  "access_token": "xxxx",
+  "social_uid": "123456",
+  "faceimg": "https://avatar.example.com/1.png",
+  "nickname": "张三",
+  "location": "广东深圳",
+  "gender": "男",
+  "ip": "1.2.3.4" }
+</code><button class="copy-btn" onclick="copy(this)">复制</button></pre>
+    <p>若 <code>code</code> 已使用、过期或登录未完成，返回 <code>code=2</code>：</p>
+    <pre><code>{ "code": 2, "msg": "未完成登录", "type": "gitee" }
+</code><button class="copy-btn" onclick="copy(this)">复制</button></pre>
+
+    <h3>4. 按 social_uid 查询（act=query）</h3>
+    <p>用于目标站点在本地用户登录时校验第三方 UID 是否已绑定，无需携带 code：</p>
+    <pre><code>GET /connect.php?act=query&amp;appid=10001&amp;appkey=your_appkey&amp;type=gitee&amp;social_uid=123456
+</code><button class="copy-btn" onclick="copy(this)">复制</button></pre>
+    <pre><code>{ "code": 0, "msg": "succ", "type": "gitee",
+  "social_uid": "123456",
+  "faceimg": "https://avatar.example.com/1.png",
+  "nickname": "张三",
+  "location": "广东深圳",
+  "ip": "1.2.3.4" }
+</code><button class="copy-btn" onclick="copy(this)">复制</button></pre>
+
+    <h2>类型对照表</h2>
+    <table>
+      <thead><tr><th>type 参数</th><th>第三方平台</th></tr></thead>
+      <tbody>
+        <tr><td>qq</td><td>QQ 互联</td></tr>
+        <tr><td>wx</td><td>微信开放平台</td></tr>
+        <tr><td>alipay</td><td>支付宝开放平台</td></tr>
+        <tr><td>sina</td><td>微博开放平台</td></tr>
+        <tr><td>baidu</td><td>百度开放平台</td></tr>
+        <tr><td>douyin</td><td>抖音开放平台</td></tr>
+        <tr><td>dingtalk</td><td>钉钉开放平台</td></tr>
+        <tr><td>gitee</td><td>Gitee（码云）</td></tr>
+        <tr><td>wework</td><td>企业微信</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ===================== REST 接口 ===================== -->
+  <div class="panel" id="rest">
+    <h2>REST 风格接口</h2>
+    <div class="alert">
+      自研 REST 风格登录接口，请求与响应均为 JSON，统一返回 <code>{code, message, data}</code>。
+      登录接口（/api/v1/oauth/login）明文校验 <code>appid/appkey</code>；信息接口
+      （userinfo / query）只传 <code>appid</code>，通过服务端 MD5 签名校验身份，避免 appkey 泄漏。
+    </div>
+
+    <h2>接入流程</h2>
+    <div class="flow">
+      <div class="step"><div class="num">1</div><div class="txt">目标站点调用 <code>POST /api/v1/oauth/login</code>，携带 <code>appid/appkey/type/redirect_uri</code>，获取第三方授权地址。</div></div>
+      <div class="step"><div class="num">2</div><div class="txt">用户授权完成后平台 302 跳回 <code>redirect_uri</code>，携带 <code>type</code>、<code>code</code>。</div></div>
+      <div class="step"><div class="num">3</div><div class="txt">目标站点调用 <code>POST /api/v1/oauth/userinfo</code>，用 <code>code</code> + <code>sign</code> 换取用户信息（一次性），完成登录。</div></div>
+    </div>
+
+    <h2>签名规则</h2>
+    <p>信息接口使用 MD5 签名：将接口相关参数按 key <strong>升序</strong>拼接为
+      <code>k1=v1&amp;k2=v2</code>，末尾追加 <code>&amp;key=&lt;appkey&gt;</code>，整体取 MD5（小写）。</p>
+    <pre><code>以 userinfo 为例，参数为 appid / type / code：
+原串 = appid=10001&amp;code=xxxx&amp;type=gitee&amp;key=your_appkey
+sign = md5(原串)
+</code><button class="copy-btn" onclick="copy(this)">复制</button></pre>
+    <table>
+      <thead><tr><th>接口</th><th>签名参与参数</th></tr></thead>
+      <tbody>
+        <tr><td>POST /api/v1/oauth/userinfo</td><td>appid、type、code</td></tr>
+        <tr><td>POST /api/v1/oauth/query</td><td>appid、type、social_uid</td></tr>
+      </tbody>
+    </table>
+
+    <h2>1. 发起登录</h2>
+    <p><code>POST /api/v1/oauth/login</code>，请求体（JSON）：</p>
+    <pre><code>{ "appid": "10001", "appkey": "your_appkey", "type": "gitee",
+  "redirect_uri": "https://example.com/callback" }
+</code><button class="copy-btn" onclick="copy(this)">复制</button></pre>
+    <pre><code>{ "code": 0, "message": "success",
+  "data": { "url": "https://gitee.com/oauth/authorize?client_id=xxx&amp;redirect_uri=xxx&amp;state=xxx",
+            "type": "gitee" } }
+</code><button class="copy-btn" onclick="copy(this)">复制</button></pre>
+    <p>用户授权完成后，平台 302 跳回 <code>redirect_uri</code>：</p>
+    <pre><code>https://example.com/callback?type=gitee&amp;code=xxxx
+</code><button class="copy-btn" onclick="copy(this)">复制</button></pre>
+
+    <h2>2. 换取用户信息</h2>
+    <p><code>POST /api/v1/oauth/userinfo</code>，请求体（JSON）：</p>
+    <pre><code>{ "appid": "10001", "code": "xxxx", "type": "gitee",
+  "sign": "32 位 MD5 小写" }
+</code><button class="copy-btn" onclick="copy(this)">复制</button></pre>
+    <pre><code>{ "code": 0, "message": "success",
+  "data": { "type": "gitee", "openid": "123456", "unionid": "u_8888",
+            "nickname": "张三", "avatar": "https://avatar.example.com/1.png",
+            "email": "zhangsan@example.com", "gender": "男",
+            "location": "广东深圳", "access_token": "xxxx", "ip": "1.2.3.4" } }
+</code><button class="copy-btn" onclick="copy(this)">复制</button></pre>
+
+    <h2>3. 按 UID 查询用户</h2>
+    <p><code>POST /api/v1/oauth/query</code>，请求体（JSON）：</p>
+    <pre><code>{ "appid": "10001", "type": "gitee", "social_uid": "123456",
+  "sign": "32 位 MD5 小写" }
+</code><button class="copy-btn" onclick="copy(this)">复制</button></pre>
+    <pre><code>{ "code": 0, "message": "success",
+  "data": { "type": "gitee", "openid": "123456", "nickname": "张三",
+            "avatar": "https://avatar.example.com/1.png",
+            "location": "广东深圳", "ip": "1.2.3.4" } }
+</code><button class="copy-btn" onclick="copy(this)">复制</button></pre>
+
+    <h2>4. 获取已启用渠道</h2>
+    <p><code>GET /api/oauth/providers</code>，公开接口，无需鉴权：</p>
+    <pre><code>[ { "name": "gitee", "display_name": "Gitee", "category": "social" } ]
+</code><button class="copy-btn" onclick="copy(this)">复制</button></pre>
+
+    <h2>错误码</h2>
+    <table>
+      <thead><tr><th>code</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr><td>0</td><td>成功</td></tr>
+        <tr><td>1</td><td>业务失败（message 中给出具体原因）</td></tr>
+        <tr><td>2</td><td>登录未完成（code 无效 / 已使用）</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+  document.querySelectorAll('.tab').forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      document.querySelectorAll('.tab').forEach(function (t) { t.classList.remove('active'); });
+      document.querySelectorAll('.panel').forEach(function (p) { p.classList.remove('active'); });
+      tab.classList.add('active');
+      document.getElementById(tab.dataset.tab).classList.add('active');
+    });
+  });
+
+  function copy(btn) {
+    var pre = btn.parentElement;
+    var text = pre.innerText.replace(/复制$/g, '').trim();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () {
+        btn.textContent = '已复制';
+        setTimeout(function () { btn.textContent = '复制'; }, 1200);
+      });
+    }
+  }
+</script>
+
+</body>
+</html>
