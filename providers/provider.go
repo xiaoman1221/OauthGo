@@ -8,6 +8,8 @@ type Config struct {
 	ClientSecret string
 	RedirectURL  string
 	Extra        map[string]interface{}
+	UseProxy     bool
+	Proxy        ProxyConfig
 }
 
 // ExtraString 读取扩展配置中的字符串值
@@ -64,6 +66,13 @@ func All() []Meta {
 		{Name: "wecom", DisplayName: "企业微信", Category: "enterprise"},
 		{Name: "lark", DisplayName: "飞书", Category: "enterprise"},
 		{Name: "infoflow", DisplayName: "如流", Category: "enterprise"},
+		{Name: "google", DisplayName: "Google", Category: "social"},
+		{Name: "github", DisplayName: "GitHub", Category: "social"},
+		{Name: "microsoft", DisplayName: "Microsoft", Category: "social"},
+		{Name: "apple", DisplayName: "Apple", Category: "social"},
+		{Name: "discord", DisplayName: "Discord", Category: "social"},
+		{Name: "facebook", DisplayName: "Facebook", Category: "social"},
+		{Name: "linkedin", DisplayName: "LinkedIn", Category: "social"},
 	}
 }
 
@@ -104,6 +113,20 @@ func New(name string, cfg Config) (Provider, error) {
 		return &LarkProvider{cfg: cfg}, nil
 	case "infoflow":
 		return &InfoflowProvider{cfg: cfg}, nil
+	case "google":
+		return &GoogleProvider{cfg: cfg, client: clientFor(cfg.UseProxy, cfg.Proxy)}, nil
+	case "github":
+		return &GitHubProvider{cfg: cfg, client: clientFor(cfg.UseProxy, cfg.Proxy)}, nil
+	case "microsoft":
+		return &MicrosoftProvider{cfg: cfg, client: clientFor(cfg.UseProxy, cfg.Proxy)}, nil
+	case "apple":
+		return &AppleProvider{cfg: cfg, client: clientFor(cfg.UseProxy, cfg.Proxy)}, nil
+	case "discord":
+		return &DiscordProvider{cfg: cfg, client: clientFor(cfg.UseProxy, cfg.Proxy)}, nil
+	case "facebook":
+		return &FacebookProvider{cfg: cfg, client: clientFor(cfg.UseProxy, cfg.Proxy)}, nil
+	case "linkedin":
+		return &LinkedInProvider{cfg: cfg, client: clientFor(cfg.UseProxy, cfg.Proxy)}, nil
 	default:
 		return nil, fmt.Errorf("不支持的登录渠道: %s", name)
 	}

@@ -2,24 +2,70 @@ package providers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"golang.org/x/net/proxy"
 )
 
+// httpClient 默认 HTTP 客户端（直连）
 var httpClient = &http.Client{Timeout: 15 * time.Second}
 
-// getJSON 发起 GET 请求并解析 JSON 响应
-func getJSON(rawURL string, target interface{}) error {
-	return getJSONWithHeaders(rawURL, nil, target)
+// ProxyConfig SOCKS5 代理配置
+type ProxyConfig struct {
+	Address  string
+	Username string
+	Password string
 }
 
-// getJSONWithHeaders 发起带请求头的 GET 请求并解析 JSON 响应
+// clientFor 根据是否启用代理返回对应的 HTTP 客户端
+func clientFor(useProxy bool, cfg ProxyConfig) *http.Client {
+	if !useProxy || strings.TrimSpace(cfg.Address) == "" {
+		return httpClient
+	}
+	return &http.Client{
+		Timeout: 15 * time.Second,
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				d, err := socks5Dialer(cfg)
+				if err != nil {
+					return nil, err
+				}
+				return d.Dial(network, addr)
+			},
+			TLSHandshakeTimeout: 10 * time.Second,
+		},
+	}
+}
+
+// socks5Dialer 创建 SOCKS5 拨号器
+func socks5Dialer(cfg ProxyConfig) (proxy.Dialer, error) {
+	var auth *proxy.Auth
+	if cfg.Username != "" {
+		auth = &proxy.Auth{User: cfg.Username, Password: cfg.Password}
+	}
+	return proxy.SOCKS5("tcp", cfg.Address, auth, proxy.Direct)
+}
+
+// getJSON 发起 GET 请求并解析 JSON 响应（直连）
+func getJSON(rawURL string, target interface{}) error {
+	return getJSONClient(httpClient, rawURL, nil, target)
+}
+
+// getJSONWithHeaders 发起带请求头的 GET 请求并解析 JSON 响应（直连）
 func getJSONWithHeaders(rawURL string, headers map[string]string, target interface{}) error {
+	return getJSONClient(httpClient, rawURL, headers, target)
+}
+
+// getJSONClient 使用指定客户端发起 GET 请求并解析 JSON 响应
+func getJSONClient(client *http.Client, rawURL string, headers map[string]string, target interface{}) error {
 	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
 	if err != nil {
 		return err
@@ -27,7 +73,7 @@ func getJSONWithHeaders(rawURL string, headers map[string]string, target interfa
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	resp, err := httpClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -39,9 +85,22 @@ func getJSONWithHeaders(rawURL string, headers map[string]string, target interfa
 	return decodeJSON(resp.Body, target)
 }
 
-// postForm 发起表单 POST 请求并解析 JSON 响应
+// postForm 发起表单 POST 请求并解析 JSON 响应（直连）
 func postForm(rawURL string, form url.Values, target interface{}) error {
-	resp, err := httpClient.PostForm(rawURL, form)
+	return postFormClient(httpClient, rawURL, nil, form, target)
+}
+
+// postFormClient 使用指定客户端发起表单 POST 请求并解析 JSON 响应
+func postFormClient(client *http.Client, rawURL string, headers map[string]string, form url.Values, target interface{}) error {
+	req, err := http.NewRequest(http.MethodPost, rawURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -53,8 +112,13 @@ func postForm(rawURL string, form url.Values, target interface{}) error {
 	return decodeJSON(resp.Body, target)
 }
 
-// postJSON 发起 JSON POST 请求并解析 JSON 响应
+// postJSON 发起 JSON POST 请求并解析 JSON 响应（直连）
 func postJSON(rawURL string, payload interface{}, target interface{}) error {
+	return postJSONClient(httpClient, rawURL, payload, target)
+}
+
+// postJSONClient 使用指定客户端发起 JSON POST 请求并解析 JSON 响应
+func postJSONClient(client *http.Client, rawURL string, payload interface{}, target interface{}) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -64,7 +128,7 @@ func postJSON(rawURL string, payload interface{}, target interface{}) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := httpClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -76,9 +140,14 @@ func postJSON(rawURL string, payload interface{}, target interface{}) error {
 	return decodeJSON(resp.Body, target)
 }
 
-// getText 发起 GET 请求，接收文本响应（如 QQ 的 access_token 查询串）
+// getText 发起 GET 请求，接收文本响应（直连）
 func getText(rawURL string) (string, error) {
-	resp, err := httpClient.Get(rawURL)
+	return getTextClient(httpClient, rawURL)
+}
+
+// getTextClient 使用指定客户端发起 GET 请求，接收文本响应
+func getTextClient(client *http.Client, rawURL string) (string, error) {
+	resp, err := client.Get(rawURL)
 	if err != nil {
 		return "", err
 	}
@@ -86,9 +155,14 @@ func getText(rawURL string) (string, error) {
 	return readBody(resp.StatusCode, rawURL, resp.Body)
 }
 
-// postText 发起 POST 请求，接收文本响应（如 QQ 的 access_token 查询串）
+// postText 发起 POST 请求，接收文本响应（直连）
 func postText(rawURL string, form url.Values) (string, error) {
-	resp, err := httpClient.PostForm(rawURL, form)
+	return postTextClient(httpClient, rawURL, form)
+}
+
+// postTextClient 使用指定客户端发起 POST 请求，接收文本响应
+func postTextClient(client *http.Client, rawURL string, form url.Values) (string, error) {
+	resp, err := client.PostForm(rawURL, form)
 	if err != nil {
 		return "", err
 	}

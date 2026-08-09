@@ -68,7 +68,7 @@ import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getSettings, updateSettings, testSMTP, testSMS } from '../api/modules'
 
-const BOOL_KEYS = ['register_enabled', 'register_email_verify', 'smtp_enabled', 'smtp_tls']
+const BOOL_KEYS = ['register_enabled', 'register_email_verify', 'smtp_enabled', 'smtp_tls', 'proxy_enabled']
 
 const activeTab = ref('site')
 const groups = ref([])
@@ -83,6 +83,7 @@ const GROUP_LABELS = {
   security: '安全设置',
   smtp: 'SMTP 邮件',
   sms: '短信设置',
+  proxy: '代理设置',
   template: '邮件模板'
 }
 

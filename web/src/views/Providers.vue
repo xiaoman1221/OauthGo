@@ -94,6 +94,14 @@
             <el-input v-else v-model="config[f.key]" :placeholder="f.placeholder" />
           </el-form-item>
         </template>
+
+        <template v-if="schema.supportProxy">
+          <el-divider content-position="left">代理设置</el-divider>
+          <el-form-item label="使用代理">
+            <el-switch v-model="config.use_proxy" />
+            <span class="switch-tip">开启后通过系统设置的 SOCKS5 代理访问该渠道接口（境外渠道建议开启）</span>
+          </el-form-item>
+        </template>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -146,6 +154,7 @@ function openDialog(row) {
   } catch (e) {
     config.value = {}
   }
+  config.value.use_proxy = !!config.value.use_proxy
   dialogVisible.value = true
 }
 

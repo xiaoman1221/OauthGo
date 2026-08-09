@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"OauthGo/config"
@@ -50,16 +51,16 @@ func ListProviders(c *gin.Context) {
 	result := make([]gin.H, 0, len(list))
 	for _, p := range list {
 		result = append(result, gin.H{
-			"id":           p.ID,
-			"name":         p.Name,
-			"display_name": p.DisplayName,
-			"category":     p.Category,
-			"client_id":    p.ClientID,
+			"id":            p.ID,
+			"name":          p.Name,
+			"display_name":  p.DisplayName,
+			"category":      p.Category,
+			"client_id":     p.ClientID,
 			"client_secret": p.ClientSecret,
-			"config":       p.Config,
-			"enabled":      p.Enabled,
-			"main_site":    p.MainSite,
-			"sort":         p.Sort,
+			"config":        p.Config,
+			"enabled":       p.Enabled,
+			"main_site":     p.MainSite,
+			"sort":          p.Sort,
 			// 回调地址统一由 HOST 拼接，不支持自定义
 			"callback_url": callbackURL(p.Name),
 		})
@@ -169,8 +170,9 @@ func OAuthLogin(c *gin.Context) {
 // OAuthCallback 第三方渠道回调
 func OAuthCallback(c *gin.Context) {
 	name := c.Param("provider")
-	code := c.Query("code")
-	state := c.Query("state")
+	// 同时支持 GET query 与表单 POST（如 Apple 的 response_mode=form_post）
+	code := c.Request.FormValue("code")
+	state := c.Request.FormValue("state")
 
 	// 优先处理目标站点登录会话（彩虹 / REST 协议）
 	if session, ok := services.ResolveAppSession(state); ok {
@@ -396,12 +398,33 @@ func loadProvider(name string) (providers.Provider, bool) {
 		ClientSecret: p.ClientSecret,
 		RedirectURL:  p.RedirectURL,
 		Extra:        extra,
+		UseProxy:     extraBool(extra, "use_proxy"),
+		Proxy: providers.ProxyConfig{
+			Address:  services.GetSetting("proxy_addr", ""),
+			Username: services.GetSetting("proxy_username", ""),
+			Password: services.GetSetting("proxy_password", ""),
+		},
 	}
 	prov, err := providers.New(name, cfg)
 	if err != nil {
 		return nil, false
 	}
 	return prov, true
+}
+
+// extraBool 读取扩展配置中的布尔值
+func extraBool(extra map[string]interface{}, key string) bool {
+	if extra == nil {
+		return false
+	}
+	switch v := extra[key].(type) {
+	case bool:
+		return v
+	case string:
+		b, err := strconv.ParseBool(v)
+		return err == nil && b
+	}
+	return false
 }
 
 // TestProvider 测试渠道配置（管理员）：校验必填项并尝试构建授权地址
@@ -463,6 +486,19 @@ func TestProvider(c *gin.Context) {
 			utils.FailBadRequest(c, "企业微信渠道必须填写「AgentId」")
 			return
 		}
+	case "apple":
+		if strings.TrimSpace(providers.Config{Extra: extra}.ExtraString("team_id")) == "" {
+			utils.FailBadRequest(c, "Apple 渠道必须填写「Team ID」")
+			return
+		}
+		if strings.TrimSpace(providers.Config{Extra: extra}.ExtraString("key_id")) == "" {
+			utils.FailBadRequest(c, "Apple 渠道必须填写「Key ID」")
+			return
+		}
+		if strings.TrimSpace(providers.Config{Extra: extra}.ExtraString("client_secret_key")) == "" {
+			utils.FailBadRequest(c, "Apple 渠道必须填写「私钥（.p8）」")
+			return
+		}
 	}
 
 	prov, err := providers.New(name, providers.Config{
@@ -470,6 +506,12 @@ func TestProvider(c *gin.Context) {
 		ClientSecret: clientSecret,
 		RedirectURL:  callbackURL(name),
 		Extra:        extra,
+		UseProxy:     extraBool(extra, "use_proxy"),
+		Proxy: providers.ProxyConfig{
+			Address:  services.GetSetting("proxy_addr", ""),
+			Username: services.GetSetting("proxy_username", ""),
+			Password: services.GetSetting("proxy_password", ""),
+		},
 	})
 	if err != nil {
 		utils.FailBadRequest(c, "渠道配置错误："+err.Error())
@@ -503,6 +545,20 @@ func providerIDLabel(name string) string {
 		return "App ID"
 	case "infoflow":
 		return "AppID"
+	case "google":
+		return "Client ID"
+	case "github":
+		return "Client ID"
+	case "microsoft":
+		return "Application (client) ID"
+	case "apple":
+		return "Services ID"
+	case "discord":
+		return "Client ID"
+	case "facebook":
+		return "App ID"
+	case "linkedin":
+		return "Client ID"
 	default:
 		return "ClientID"
 	}

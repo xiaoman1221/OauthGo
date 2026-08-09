@@ -281,6 +281,172 @@ export const channelSchemas = {
     ],
     callbackNote: '在如流开放平台应用「回调地址」填入完整回调地址。',
     notes: ['如流为百度旗下的企业协作产品，登录需企业授权。']
+  },
+  google: {
+    name: 'google',
+    displayName: 'Google',
+    category: 'social',
+    idLabel: 'Client ID',
+    secretLabel: 'Client Secret',
+    idPlaceholder: 'Google OAuth 2.0 Client ID',
+    secretPlaceholder: 'Google OAuth 2.0 Client Secret',
+    tips: '在 Google Cloud 控制台「API 和服务 → 凭据」创建 OAuth 2.0 客户端 ID，类型选择「Web 应用」，并将回调地址加入「已获授权的重定向 URI」。',
+    registerUrl: 'https://console.cloud.google.com/apis/credentials',
+    registerLabel: 'Google Cloud 控制台',
+    fields: ['Client ID', 'Client Secret', '已获授权的重定向 URI'],
+    steps: [
+      '访问 Google Cloud 控制台并创建一个项目。',
+      '进入「API 和服务 → 凭据」，点击「创建凭据 → OAuth 客户端 ID」。',
+      '应用类型选择「Web 应用」，将回调地址加入「已获授权的重定向 URI」。',
+      '创建完成后获取 Client ID 与 Client Secret。',
+      '在 OauthGo「登录渠道」填入 Client ID 与 Client Secret，开启「使用代理」并保存。'
+    ],
+    callbackNote: '在 Google Cloud「已获授权的重定向 URI」填入完整回调地址。',
+    supportProxy: true,
+    notes: ['境外服务需在「系统设置 → 代理设置」配置 SOCKS5 代理，并在本渠道开启「使用代理」。', '测试阶段可使用 OAuth 同意屏幕，将自身账号加入测试用户。']
+  },
+  github: {
+    name: 'github',
+    displayName: 'GitHub',
+    category: 'social',
+    idLabel: 'Client ID',
+    secretLabel: 'Client Secret',
+    idPlaceholder: 'GitHub OAuth App Client ID',
+    secretPlaceholder: 'GitHub OAuth App Client Secret',
+    tips: '在 GitHub「Settings → Developer settings → OAuth Apps」创建 OAuth App，将回调地址填入「Authorization callback URL」。',
+    registerUrl: 'https://github.com/settings/developers',
+    registerLabel: 'GitHub Developer settings',
+    fields: ['Client ID', 'Client Secret', 'Authorization callback URL'],
+    steps: [
+      '登录 GitHub，进入「Settings → Developer settings → OAuth Apps」。',
+      '点击「New OAuth App」，填写应用信息。',
+      '在「Authorization callback URL」填入完整回调地址。',
+      '创建成功后获取 Client ID 与 Client Secret（首次可见，之后需重新生成）。',
+      '在 OauthGo「登录渠道」填入 Client ID 与 Client Secret，开启「使用代理」并保存。'
+    ],
+    callbackNote: '在 GitHub OAuth App 的「Authorization callback URL」填入完整回调地址。',
+    supportProxy: true,
+    notes: ['GitHub 为境外服务，国内部署建议开启 SOCKS5 代理。', 'GitHub 不提供公开邮箱时，将无法自动获取邮箱。']
+  },
+  microsoft: {
+    name: 'microsoft',
+    displayName: 'Microsoft',
+    category: 'social',
+    idLabel: 'Application (client) ID',
+    secretLabel: 'Client Secret',
+    idPlaceholder: 'Azure 应用 Application (client) ID',
+    secretPlaceholder: 'Azure 应用 Client Secret',
+    tips: '在 Azure 门户「应用注册」创建应用（支持个人微软账号与工作/学校账号），在「证书与密码」中创建客户端密码，并配置 Web 平台重定向 URI。',
+    registerUrl: 'https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade',
+    registerLabel: 'Azure 门户',
+    fields: ['Application (client) ID', 'Client Secret', '重定向 URI'],
+    steps: [
+      '在 Azure 门户创建「应用注册」，支持的账户类型可选「任何组织目录中的帐户和个人 Microsoft 帐户」。',
+      '在「身份验证 → Web 平台」添加重定向 URI（完整回调地址）。',
+      '在「证书与密码 → 客户端密码」新建一个客户端密码并复制保存。',
+      '记录「应用程序（客户端）ID」。',
+      '在 OauthGo「登录渠道」填入 Client ID 与 Client Secret，开启「使用代理」并保存。'
+    ],
+    callbackNote: '在 Azure「身份验证 → 平台配置 → Web」的重定向 URI 中填入完整回调地址。',
+    supportProxy: true,
+    notes: ['Microsoft 登录为境外服务，建议开启 SOCKS5 代理。', '客户端密码只显示一次，丢失后需重新创建。']
+  },
+  apple: {
+    name: 'apple',
+    displayName: 'Apple',
+    category: 'social',
+    idLabel: 'Services ID',
+    secretLabel: 'Client Secret',
+    idPlaceholder: 'Apple Services ID（如 com.example.login）',
+    secretPlaceholder: '该处留空，密钥由系统根据下方私钥自动生成',
+    tips: '在 Apple 开发者后台创建 Services ID 与 Sign in with Apple 配置，生成 .p8 私钥，并将回调地址配置到「Return URLs」。',
+    registerUrl: 'https://developer.apple.com/account/resources/identifiers/list',
+    registerLabel: 'Apple Developer',
+    fields: ['Services ID', 'Team ID', 'Key ID', '私钥（.p8）', 'Return URLs'],
+    steps: [
+      '在 Apple Developer「Certificates, Identifiers & Profiles」创建 Services ID。',
+      '开启 Sign in with Apple，为每个 Services ID 配置对应 App（Domains and Subdomains 填站点域名）。',
+      '在「Keys」页面创建 Sign in with Apple 密钥，下载 .p8 私钥文件并记录 Key ID。',
+      '在返回 URL 中填入完整回调地址。',
+      '在 OauthGo「登录渠道」填入 Services ID、Team ID、Key ID 与私钥内容，开启「使用代理」并保存。'
+    ],
+    callbackNote: '在 Apple 开发者后台 Sign in with Apple 服务配置的「Return URLs」填入完整回调地址。',
+    configFields: [
+      { key: 'team_id', label: 'Team ID', type: 'input', placeholder: 'Apple 开发者 Team ID（10 位）' },
+      { key: 'key_id', label: 'Key ID', type: 'input', placeholder: 'Sign in with Apple 密钥的 Key ID' },
+      { key: 'client_secret_key', label: '私钥（.p8）', type: 'textarea', rows: 5, placeholder: '将下载的 .p8 私钥文件内容完整粘贴（-----BEGIN PRIVATE KEY----- ...）' }
+    ],
+    divider: '扩展配置',
+    supportProxy: true,
+    notes: ['客户端密钥为 ES256 JWT，由系统使用 Team ID / Key ID / 私钥实时生成，无需填写 Client Secret。', '回调为表单 POST 提交（response_mode=form_post），系统已自动兼容。', 'Apple 仅在首次授权时返回用户信息，昵称默认取自邮箱前缀。']
+  },
+  discord: {
+    name: 'discord',
+    displayName: 'Discord',
+    category: 'social',
+    idLabel: 'Client ID',
+    secretLabel: 'Client Secret',
+    idPlaceholder: 'Discord OAuth2 Client ID',
+    secretPlaceholder: 'Discord OAuth2 Client Secret',
+    tips: '在 Discord Developer Portal 创建应用，开启 OAuth2，将回调地址加入「Redirects」，并启用 identify + email 范围。',
+    registerUrl: 'https://discord.com/developers/applications',
+    registerLabel: 'Discord Developer Portal',
+    fields: ['Client ID', 'Client Secret', 'Redirects'],
+    steps: [
+      '在 Discord Developer Portal 创建 Application。',
+      '进入「OAuth2」页面，复制 Client ID 与 Client Secret。',
+      '在「Redirects」中加入完整回调地址。',
+      '在 OAuth2 → Default Authorization Link 的 Scopes 中勾选 identify 与 email。',
+      '在 OauthGo「登录渠道」填入 Client ID 与 Client Secret，开启「使用代理」并保存。'
+    ],
+    callbackNote: '在 Discord OAuth2 页面的「Redirects」填入完整回调地址。',
+    supportProxy: true,
+    notes: ['Discord 为境外服务，建议开启 SOCKS5 代理。']
+  },
+  facebook: {
+    name: 'facebook',
+    displayName: 'Facebook',
+    category: 'social',
+    idLabel: 'App ID',
+    secretLabel: 'App Secret',
+    idPlaceholder: 'Facebook App ID',
+    secretPlaceholder: 'Facebook App Secret',
+    tips: '在 Facebook for Developers 创建应用并启用 Facebook 登录，将回调地址加入「有效 OAuth 重定向 URI」。',
+    registerUrl: 'https://developers.facebook.com/apps/',
+    registerLabel: 'Facebook for Developers',
+    fields: ['App ID', 'App Secret', '有效 OAuth 重定向 URI'],
+    steps: [
+      '在 Facebook for Developers 创建应用并添加「Facebook 登录」产品。',
+      '在「Facebook 登录 → 设置」的「有效 OAuth 重定向 URI」填入完整回调地址。',
+      '复制 App ID 与 App Secret。',
+      '在 OauthGo「登录渠道」填入 App ID 与 App Secret，开启「使用代理」并保存。'
+    ],
+    callbackNote: '在 Facebook 登录「设置 → 有效 OAuth 重定向 URI」填入完整回调地址。',
+    supportProxy: true,
+    notes: ['Facebook 应用需处于 Live 状态方可对外提供登录。', '国内访问 Facebook 需代理。']
+  },
+  linkedin: {
+    name: 'linkedin',
+    displayName: 'LinkedIn',
+    category: 'social',
+    idLabel: 'Client ID',
+    secretLabel: 'Client Secret',
+    idPlaceholder: 'LinkedIn OAuth Client ID',
+    secretPlaceholder: 'LinkedIn OAuth Client Secret',
+    tips: '在 LinkedIn Developer Portal 创建应用，启用 Sign In with LinkedIn using OpenID Connect，并将回调地址加入「Authorized redirect URLs」。',
+    registerUrl: 'https://www.linkedin.com/developers/apps',
+    registerLabel: 'LinkedIn Developer Portal',
+    fields: ['Client ID', 'Client Secret', 'Authorized redirect URLs'],
+    steps: [
+      '在 LinkedIn Developer Portal 创建 App。',
+      '进入「Products」页面添加 Sign In with LinkedIn using OpenID Connect。',
+      '在「Auth → Authorized redirect URLs for your app」填入完整回调地址。',
+      '复制 Client ID 与 Client Secret。',
+      '在 OauthGo「登录渠道」填入 Client ID 与 Client Secret，开启「使用代理」并保存。'
+    ],
+    callbackNote: '在 LinkedIn「Auth → Authorized redirect URLs」填入完整回调地址。',
+    supportProxy: true,
+    notes: ['LinkedIn 为境外服务，建议开启 SOCKS5 代理。', '应用需完成开发者审核后方可对公众开放。']
   }
 }
 
@@ -299,7 +465,8 @@ export const defaultChannelSchema = {
   callbackNote: '',
   notes: [],
   configFields: [],
-  divider: ''
+  divider: '',
+  supportProxy: false
 }
 
 export function channelSchema(name) {

@@ -38,6 +38,12 @@ func DefaultSettingDefs() []SettingDef {
 		{Key: "code_length", Value: "6", Description: "验证码长度", Group: "security"},
 		{Key: "code_expire_minutes", Value: "10", Description: "验证码有效期（分钟）", Group: "security"},
 
+		// SOCKS5 代理设置（用于境外登录渠道，需在各渠道中开启「使用代理」）
+		{Key: "proxy_enabled", Value: "0", Description: "启用 SOCKS5 代理", Group: "proxy"},
+		{Key: "proxy_addr", Value: "", Description: "SOCKS5 代理地址（host:port）", Group: "proxy"},
+		{Key: "proxy_username", Value: "", Description: "代理用户名（可选）", Group: "proxy"},
+		{Key: "proxy_password", Value: "", Description: "代理密码（可选）", Group: "proxy", Sensitive: true},
+
 		// SMTP 邮件设置
 		{Key: "smtp_enabled", Value: "0", Description: "启用 SMTP 发信", Group: "smtp"},
 		{Key: "smtp_host", Value: "", Description: "SMTP 服务器", Group: "smtp"},

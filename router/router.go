@@ -44,6 +44,7 @@ func Setup() *gin.Engine {
 			oauth.GET("/:provider/login", handlers.OAuthLogin)
 			oauth.POST("/:provider/login", handlers.OAuthLogin)
 			oauth.GET("/:provider/callback", handlers.OAuthCallback)
+			oauth.POST("/:provider/callback", handlers.OAuthCallback)
 		}
 
 		// 认证模块
