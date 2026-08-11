@@ -34,6 +34,7 @@ func appView(app *models.App) gin.H {
 	}
 	return gin.H{
 		"id":         app.ID,
+		"owner_id":   app.OwnerID,
 		"name":       app.Name,
 		"platform":   app.Platform,
 		"appid":      app.AppID,
@@ -83,10 +84,21 @@ func typesToJSON(types []string) string {
 
 // ListApps 应用列表
 func ListApps(c *gin.Context) {
+	roleAny, _ := c.Get("role")
+	userAny, _ := c.Get("user_id")
+	role, _ := roleAny.(string)
 	var apps []models.App
-	if err := database.DB.Order("id desc").Find(&apps).Error; err != nil {
-		utils.FailInternal(c, "查询失败")
-		return
+	if role == "admin" {
+		if err := database.DB.Order("id desc").Find(&apps).Error; err != nil {
+			utils.FailInternal(c, "查询失败")
+			return
+		}
+	} else {
+		uid, _ := userAny.(uint)
+		if err := database.DB.Where("owner_id = ?", uid).Order("id desc").Find(&apps).Error; err != nil {
+			utils.FailInternal(c, "查询失败")
+			return
+		}
 	}
 	result := make([]gin.H, 0, len(apps))
 	for i := range apps {
@@ -108,6 +120,16 @@ func GetApp(c *gin.Context) {
 		utils.FailNotFound(c, "应用不存在")
 		return
 	}
+	roleAny, _ := c.Get("role")
+	userAny, _ := c.Get("user_id")
+	role, _ := roleAny.(string)
+	if role != "admin" {
+		uid, _ := userAny.(uint)
+		if app.OwnerID != uid {
+			utils.FailForbidden(c)
+			return
+		}
+	}
 	utils.Success(c, appView(&app))
 }
 
@@ -123,7 +145,31 @@ func CreateApp(c *gin.Context) {
 		return
 	}
 
+	// 权限与配额校验
+	roleAny, _ := c.Get("role")
+	userAny, _ := c.Get("user_id")
+	role, _ := roleAny.(string)
+	uid, _ := userAny.(uint)
+	if role != "admin" {
+		max := services.GetIntSetting("user_max_apps", 5)
+		var cnt int64
+		database.DB.Model(&models.App{}).Where("owner_id = ?", uid).Count(&cnt)
+		if int(cnt) >= max {
+			utils.Fail(c, 403, "超过普通用户可创建的应用上限")
+			return
+		}
+		// 普通用户只能选择已配置且启用并设置为可发起主站登录的渠道（主站登录）
+		for _, t := range req.Types {
+			var p models.Provider
+			if err := database.DB.Where("name = ? AND enabled = ? AND main_site = ?", t, true, true).First(&p).Error; err != nil {
+				utils.FailBadRequest(c, "存在未配置或未启用的登录类型: "+t)
+				return
+			}
+		}
+	}
+
 	app := models.App{
+		OwnerID:  uid,
 		Name:     strings.TrimSpace(req.Name),
 		Platform: req.Platform,
 		AppID:    strings.ToLower(utils.RandomString(16)),
@@ -167,6 +213,24 @@ func UpdateApp(c *gin.Context) {
 		utils.FailNotFound(c, "应用不存在")
 		return
 	}
+	roleAny, _ := c.Get("role")
+	userAny, _ := c.Get("user_id")
+	role, _ := roleAny.(string)
+	if role != "admin" {
+		uid, _ := userAny.(uint)
+		if app.OwnerID != uid {
+			utils.FailForbidden(c)
+			return
+		}
+		// 普通用户更新时也需校验所选登录类型已配置且可用于主站登录
+		for _, t := range req.Types {
+			var p models.Provider
+			if err := database.DB.Where("name = ? AND enabled = ? AND main_site = ?", t, true, true).First(&p).Error; err != nil {
+				utils.FailBadRequest(c, "存在未配置或未启用的登录类型: "+t)
+				return
+			}
+		}
+	}
 
 	updates := map[string]interface{}{
 		"name":     strings.TrimSpace(req.Name),
@@ -196,6 +260,22 @@ func DeleteApp(c *gin.Context) {
 	if err != nil {
 		utils.FailBadRequest(c, "参数错误")
 		return
+	}
+
+	var app models.App
+	if err := database.DB.First(&app, id).Error; err != nil {
+		utils.FailNotFound(c, "应用不存在")
+		return
+	}
+	roleAny, _ := c.Get("role")
+	userAny, _ := c.Get("user_id")
+	role, _ := roleAny.(string)
+	if role != "admin" {
+		uid, _ := userAny.(uint)
+		if app.OwnerID != uid {
+			utils.FailForbidden(c)
+			return
+		}
 	}
 
 	if err := database.DB.Delete(&models.App{}, id).Error; err != nil {

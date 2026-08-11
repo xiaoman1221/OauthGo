@@ -170,6 +170,10 @@ func AuthConfig(c *gin.Context) {
 		"password_min_length":   services.GetIntSetting("password_min_length", 6),
 		"code_length":           services.GetIntSetting("code_length", 6),
 		"site_name":             services.GetSetting("site_name", "OauthGo"),
+		// login background settings for public pages
+		"login_bg_mode":      services.GetSetting("login_bg_mode", "color"),
+		"login_bg_color":     services.GetSetting("login_bg_color", "#1f4037"),
+		"login_bg_image_url": services.GetSetting("login_bg_image_url", ""),
 	})
 }
 

@@ -53,20 +53,37 @@ func ResolveBindSession(state string) (BindSession, bool) {
 
 // BindProviderAccount 将第三方账号绑定到当前用户
 func BindProviderAccount(userID uint, providerName string, info *providers.UserInfo) error {
-	if info.OpenID == "" {
+	if info.OpenID == "" && info.UnionID == "" {
 		return errors.New("未获取到第三方用户唯一标识")
 	}
 
-	var count int64
-	database.DB.Model(&models.ProviderAccount{}).
-		Where("provider = ? AND open_id = ?", providerName, info.OpenID).Count(&count)
-	if count > 0 {
-		var account models.ProviderAccount
-		database.DB.Where("provider = ? AND open_id = ?", providerName, info.OpenID).First(&account)
-		if account.UserID == userID {
-			return errors.New("该渠道账号已绑定")
+	// 优先依据 union_id 校验（若存在），否则按 open_id
+	if info.UnionID != "" {
+		var cnt int64
+		database.DB.Model(&models.ProviderAccount{}).
+			Where("provider = ? AND union_id = ?", providerName, info.UnionID).Count(&cnt)
+		if cnt > 0 {
+			var account models.ProviderAccount
+			database.DB.Where("provider = ? AND union_id = ?", providerName, info.UnionID).First(&account)
+			if account.UserID == userID {
+				return errors.New("该渠道账号已绑定")
+			}
+			return errors.New("该第三方账号已绑定其他用户")
 		}
-		return errors.New("该第三方账号已绑定其他用户")
+	}
+
+	if info.OpenID != "" {
+		var cnt int64
+		database.DB.Model(&models.ProviderAccount{}).
+			Where("provider = ? AND open_id = ?", providerName, info.OpenID).Count(&cnt)
+		if cnt > 0 {
+			var account models.ProviderAccount
+			database.DB.Where("provider = ? AND open_id = ?", providerName, info.OpenID).First(&account)
+			if account.UserID == userID {
+				return errors.New("该渠道账号已绑定")
+			}
+			return errors.New("该第三方账号已绑定其他用户")
+		}
 	}
 
 	account := models.ProviderAccount{

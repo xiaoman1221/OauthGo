@@ -5,6 +5,7 @@ import "time"
 // App 目标站点（使用本平台第三方登录服务的应用）
 type App struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
+	OwnerID   uint      `gorm:"index" json:"owner_id"`
 	Name      string    `gorm:"size:128;not null" json:"name"`
 	Platform  string    `gorm:"size:64" json:"platform"` // web / ios / android / pc
 	AppID     string    `gorm:"uniqueIndex;size:64;not null" json:"appid"`

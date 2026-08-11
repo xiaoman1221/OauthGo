@@ -322,22 +322,44 @@ func finishLogin(c *gin.Context, providerName string, info *providers.UserInfo) 
 
 // bindProviderUser 按第三方 openid 查找或创建本地用户
 func bindProviderUser(providerName string, info *providers.UserInfo) (*models.User, error) {
-	if info.OpenID == "" {
+	// 需要至少一个标识
+	if info.OpenID == "" && info.UnionID == "" {
 		return nil, errors.New("未获取到第三方用户唯一标识")
 	}
 
 	var account models.ProviderAccount
-	if err := database.DB.Where("provider = ? AND open_id = ?", providerName, info.OpenID).First(&account).Error; err == nil {
-		var user models.User
-		if err := database.DB.First(&user, account.UserID).Error; err != nil {
-			return nil, err
+	// 优先按 union_id 查找（若可用），保证同一用户跨应用一致
+	if info.UnionID != "" {
+		if err := database.DB.Where("provider = ? AND union_id = ?", providerName, info.UnionID).First(&account).Error; err == nil {
+			var user models.User
+			if err := database.DB.First(&user, account.UserID).Error; err != nil {
+				return nil, err
+			}
+			database.DB.Model(&account).Updates(map[string]interface{}{
+				"open_id":  info.OpenID,
+				"nickname": info.Nickname,
+				"avatar":   info.Avatar,
+				"email":    info.Email,
+			})
+			return &user, nil
 		}
-		database.DB.Model(&account).Updates(map[string]interface{}{
-			"nickname": info.Nickname,
-			"avatar":   info.Avatar,
-			"email":    info.Email,
-		})
-		return &user, nil
+	}
+
+	// 回退按 open_id 查找
+	if info.OpenID != "" {
+		if err := database.DB.Where("provider = ? AND open_id = ?", providerName, info.OpenID).First(&account).Error; err == nil {
+			var user models.User
+			if err := database.DB.First(&user, account.UserID).Error; err != nil {
+				return nil, err
+			}
+			database.DB.Model(&account).Updates(map[string]interface{}{
+				"union_id": info.UnionID,
+				"nickname": info.Nickname,
+				"avatar":   info.Avatar,
+				"email":    info.Email,
+			})
+			return &user, nil
+		}
 	}
 
 	// 新用户：生成随机密码（无法通过密码登录），绑定渠道账号
@@ -347,7 +369,11 @@ func bindProviderUser(providerName string, info *providers.UserInfo) (*models.Us
 		return nil, err
 	}
 
-	username := fmt.Sprintf("%s_%s", providerName, shortHash(info.OpenID))
+	ident := info.OpenID
+	if ident == "" {
+		ident = info.UnionID
+	}
+	username := fmt.Sprintf("%s_%s", providerName, shortHash(ident))
 	user := models.User{
 		Username:    username,
 		Nickname:    info.Nickname,

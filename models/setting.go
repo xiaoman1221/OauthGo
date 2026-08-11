@@ -32,6 +32,12 @@ func DefaultSettingDefs() []SettingDef {
 		{Key: "register_enabled", Value: "1", Description: "开放注册", Group: "site"},
 		{Key: "register_email_verify", Value: "0", Description: "注册邮箱验证", Group: "site"},
 		{Key: "default_role", Value: "user", Description: "默认注册角色", Group: "site"},
+		// 普通用户相关设置
+		{Key: "user_max_apps", Value: "5", Description: "普通用户最多可创建的应用数量", Group: "site"},
+		// 登录页背景设置（前端展示并可配置）
+		{Key: "login_bg_mode", Value: "color", Description: "登录页背景类型 (color|image|bing)", Group: "site"},
+		{Key: "login_bg_color", Value: "#1f4037", Description: "登录页背景纯色（hex）", Group: "site"},
+		{Key: "login_bg_image_url", Value: "", Description: "登录页背景图片 URL", Group: "site"},
 
 		// 安全设置
 		{Key: "password_min_length", Value: "6", Description: "密码最小长度", Group: "security"},

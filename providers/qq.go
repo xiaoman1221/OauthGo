@@ -47,6 +47,7 @@ func (p *QQProvider) GetUserInfo(code string) (*UserInfo, error) {
 	var me struct {
 		ClientID string `json:"client_id"`
 		OpenID   string `json:"openid"`
+		UnionID  string `json:"unionid"`
 	}
 	if err := json.Unmarshal([]byte(meJSON), &me); err != nil {
 		return nil, err
@@ -75,8 +76,10 @@ func (p *QQProvider) GetUserInfo(code string) (*UserInfo, error) {
 		avatar = userResp.FigureURLQQ1
 	}
 	return &UserInfo{
-		OpenID:   me.OpenID,
-		Nickname: userResp.Nickname,
-		Avatar:   avatar,
+		OpenID:      me.OpenID,
+		UnionID:     me.UnionID,
+		Nickname:    userResp.Nickname,
+		Avatar:      avatar,
+		AccessToken: accessToken,
 	}, nil
 }

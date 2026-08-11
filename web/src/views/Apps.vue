@@ -35,12 +35,12 @@
       <el-table-column label="登录类型" min-width="180">
         <template #default="{ row }">
           <el-tag
-            v-for="t in row.types"
+            v-for="t in (row.types || [])"
             :key="t"
             size="small"
             class="type-tag"
           >{{ typeLabel(t) }}</el-tag>
-          <span v-if="row.types.length === 0" class="muted">未选择</span>
+          <span v-if="!(row.types && row.types.length)" class="muted">未选择</span>
         </template>
       </el-table-column>
       <el-table-column prop="status" label="状态" width="80">
@@ -150,6 +150,13 @@
     </el-dialog>
 
     <el-dialog v-model="docsVisible" :title="`接入文档 - ${docsApp.name}`" width="760px">
+      <div style="margin-bottom:12px">
+        <div style="margin-bottom:6px;font-weight:600">向用户开放的第三方登录方式：</div>
+        <div>
+          <el-tag v-for="t in (docsApp.types || [])" :key="t" size="small" style="margin-right:6px">{{ typeLabel(t) }}</el-tag>
+          <span v-if="!(docsApp.types && docsApp.types.length)" class="muted">未选择或未配置</span>
+        </div>
+      </div>
       <el-alert
         type="warning"
         :closable="false"
@@ -212,7 +219,8 @@ sign = md5("appid=xxxx&amp;code=yyyy&amp;type=qq&amp;key=abc123")</pre>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { listApps, createApp, updateApp, deleteApp, listProviders } from '../api/modules'
+import { listApps, createApp, updateApp, deleteApp, listProviders, publicProviders } from '../api/modules'
+import { useUserStore } from '../stores/user'
 
 const apps = ref([])
 const providers = ref([])
@@ -223,12 +231,11 @@ const docsApp = ref({})
 const saving = ref(false)
 const regenerating = ref(false)
 const form = ref({})
+const user = useUserStore()
 
 const baseUrl = window.location.origin
 
-const providerOptions = computed(() =>
-  providers.value.map((p) => ({ name: p.name, display_name: p.display_name }))
-)
+const providerOptions = computed(() => (providers.value || []).map((p) => ({ name: p.name, display_name: p.display_name })))
 
 const allTypesSelected = computed(() => {
   const names = providerOptions.value.map((p) => p.name)
@@ -262,7 +269,9 @@ function modeType(mode) {
 onMounted(async () => {
   load()
   try {
-    providers.value = (await listProviders()).list
+    const user = useUserStore()
+    const raw = user.isAdmin ? await listProviders() : await publicProviders()
+    providers.value = Array.isArray(raw) ? raw : (raw && raw.list) ? raw.list : []
   } catch (e) {
     // 忽略
   }
@@ -273,7 +282,18 @@ async function load() {
   apps.value = data.list
 }
 
-function openDialog(row) {
+async function openDialog(row) {
+  // Ensure provider list is loaded so checkboxes render correctly
+  try {
+  const user = useUserStore()
+  if (providers.value.length === 0) {
+    const raw = user.isAdmin ? await listProviders() : await publicProviders()
+    providers.value = Array.isArray(raw) ? raw : (raw && raw.list) ? raw.list : []
+  }
+  } catch (e) {
+  // ignore
+  }
+
   form.value = row
     ? { ...row, regenerate_key: false }
     : {

@@ -13,16 +13,50 @@ import (
 
 // ListChannels 通知渠道列表
 func ListChannels(c *gin.Context) {
+	// 非管理员仅列出已启用的渠道，同时对 config 字段脱敏
+	roleAny, _ := c.Get("role")
+	role, _ := roleAny.(string)
+
 	var channels []models.NotificationChannel
-	if err := database.DB.Order("id desc").Find(&channels).Error; err != nil {
+	q := database.DB.Order("id desc")
+	if role != "admin" {
+		q = q.Where("enabled = ?", true)
+	}
+	if err := q.Find(&channels).Error; err != nil {
 		utils.FailInternal(c, "查询失败")
 		return
 	}
-	utils.Success(c, gin.H{"list": channels})
+
+	result := make([]gin.H, 0, len(channels))
+	for _, ch := range channels {
+		item := gin.H{
+			"id":         ch.ID,
+			"name":       ch.Name,
+			"type":       ch.Type,
+			"enabled":    ch.Enabled,
+			"created_at": ch.CreatedAt,
+		}
+		if role == "admin" {
+			item["config"] = ch.Config
+		} else {
+			// 非管理员不返回凭据/配置
+			item["config"] = ""
+		}
+		result = append(result, item)
+	}
+
+	utils.Success(c, gin.H{"list": result})
 }
 
-// CreateChannel 创建通知渠道
+// CreateChannel 创建通知渠道（管理员）
 func CreateChannel(c *gin.Context) {
+	roleAny, _ := c.Get("role")
+	role, _ := roleAny.(string)
+	if role != "admin" {
+		utils.FailForbidden(c)
+		return
+	}
+
 	var req models.NotificationChannel
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.FailBadRequest(c, "参数错误："+err.Error())
@@ -35,8 +69,15 @@ func CreateChannel(c *gin.Context) {
 	utils.Success(c, req)
 }
 
-// UpdateChannel 更新通知渠道
+// UpdateChannel 更新通知渠道（管理员）
 func UpdateChannel(c *gin.Context) {
+	roleAny, _ := c.Get("role")
+	role, _ := roleAny.(string)
+	if role != "admin" {
+		utils.FailForbidden(c)
+		return
+	}
+
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		utils.FailBadRequest(c, "参数错误")
@@ -67,8 +108,15 @@ func UpdateChannel(c *gin.Context) {
 	utils.Success(c, channel)
 }
 
-// DeleteChannel 删除通知渠道
+// DeleteChannel 删除通知渠道（管理员）
 func DeleteChannel(c *gin.Context) {
+	roleAny, _ := c.Get("role")
+	role, _ := roleAny.(string)
+	if role != "admin" {
+		utils.FailForbidden(c)
+		return
+	}
+
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		utils.FailBadRequest(c, "参数错误")
@@ -81,8 +129,15 @@ func DeleteChannel(c *gin.Context) {
 	utils.SuccessMsg(c, "删除成功")
 }
 
-// TestChannel 测试发送通知
+// TestChannel 测试发送通知（管理员）
 func TestChannel(c *gin.Context) {
+	roleAny, _ := c.Get("role")
+	role, _ := roleAny.(string)
+	if role != "admin" {
+		utils.FailForbidden(c)
+		return
+	}
+
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		utils.FailBadRequest(c, "参数错误")
@@ -116,8 +171,15 @@ func TestChannel(c *gin.Context) {
 	utils.SuccessMsg(c, "发送成功")
 }
 
-// ListNotificationLogs 通知日志列表
+// ListNotificationLogs 通知日志列表（管理员）
 func ListNotificationLogs(c *gin.Context) {
+	roleAny, _ := c.Get("role")
+	role, _ := roleAny.(string)
+	if role != "admin" {
+		utils.FailForbidden(c)
+		return
+	}
+
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	if page < 1 {

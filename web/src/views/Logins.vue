@@ -12,9 +12,6 @@
       <el-button type="primary" @click="load(1)">查询</el-button>
       <el-button @click="reset">重置</el-button>
       <div class="spacer" />
-      <el-button @click="onImport">
-        <el-icon><Upload /></el-icon> 导入 CSV
-      </el-button>
       <el-button type="primary" @click="onExport">
         <el-icon><Download /></el-icon> 导出 CSV
       </el-button>
@@ -113,16 +110,15 @@
       @current-change="load"
     />
 
-    <input ref="fileInput" type="file" accept=".csv" hidden @change="onFileChange" />
   </el-card>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload, Download } from '@element-plus/icons-vue'
+import { Download } from '@element-plus/icons-vue'
 import {
-  listLogins, deleteLogin, batchDeleteLogins, exportLogins, importLogins
+  listLogins, deleteLogin, batchDeleteLogins, exportLogins
 } from '../api/modules'
 
 const list = ref([])
@@ -131,7 +127,6 @@ const page = ref(1)
 const pageSize = ref(20)
 const keyword = ref('')
 const selected = ref([])
-const fileInput = ref()
 const detailVisible = ref(false)
 const current = ref(null)
 
@@ -184,20 +179,6 @@ async function onExport() {
   URL.revokeObjectURL(url)
 }
 
-function onImport() {
-  fileInput.value.click()
-}
-
-async function onFileChange(e) {
-  const file = e.target.files[0]
-  if (!file) return
-  const formData = new FormData()
-  formData.append('file', file)
-  const data = await importLogins(formData)
-  ElMessage.success(`成功导入 ${data.imported} 条记录`)
-  e.target.value = ''
-  load(1)
-}
 </script>
 
 <style scoped>

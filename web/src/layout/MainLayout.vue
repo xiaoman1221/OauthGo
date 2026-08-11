@@ -21,15 +21,11 @@
           <el-icon><List /></el-icon>
           <span>登录记录</span>
         </el-menu-item>
-        <el-menu-item index="/notifications">
-          <el-icon><Bell /></el-icon>
-          <span>到期通知</span>
-        </el-menu-item>
         <el-menu-item v-if="userStore.isAdmin" index="/providers">
           <el-icon><Link /></el-icon>
           <span>登录渠道</span>
         </el-menu-item>
-        <el-menu-item index="/settings">
+        <el-menu-item v-if="userStore.isAdmin" index="/settings">
           <el-icon><Setting /></el-icon>
           <span>系统设置</span>
         </el-menu-item>
@@ -42,7 +38,7 @@
             <el-icon><Document /></el-icon>
             <span>文档中心</span>
           </template>
-          <el-menu-item index="/docs/providers">第三方渠道接入</el-menu-item>
+          <el-menu-item v-if="userStore.isAdmin" index="/docs/providers">第三方渠道接入</el-menu-item>
           <el-menu-item index="/docs/service">本站服务文档</el-menu-item>
         </el-sub-menu>
       </el-menu>
@@ -77,7 +73,7 @@ import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import {
-  DataBoard, Grid, List, Bell, Link, Setting, User, ArrowDown, Document
+  DataBoard, Grid, List, Link, Setting, User, ArrowDown, Document
 } from '@element-plus/icons-vue'
 import { useUserStore } from '../stores/user'
 

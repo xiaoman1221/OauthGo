@@ -43,8 +43,6 @@ func migrate() {
 		&models.App{},
 		&models.LoginCode{},
 		&models.LoginRecord{},
-		&models.NotificationChannel{},
-		&models.NotificationLog{},
 		&models.Setting{},
 		&models.VerificationCode{},
 		&models.Provider{},

@@ -30,11 +30,6 @@ const routes = [
       { path: 'dashboard', name: 'Dashboard', component: () => import('../views/Dashboard.vue') },
       { path: 'apps', name: 'Apps', component: () => import('../views/Apps.vue') },
       { path: 'logins', name: 'Logins', component: () => import('../views/Logins.vue') },
-      {
-        path: 'notifications',
-        name: 'Notifications',
-        component: () => import('../views/Notifications.vue')
-      },
       { path: 'providers', name: 'Providers', component: () => import('../views/Providers.vue') },
       { path: 'docs/providers', name: 'ProviderDocs', component: () => import('../views/ProviderDocs.vue') },
       { path: 'docs/service', name: 'ServiceDocs', component: () => import('../views/ServiceDocs.vue') },
@@ -59,6 +54,13 @@ router.beforeEach((to) => {
   if (to.path === '/login' && userStore.isLogin) {
     return '/'
   }
+
+  // 路由级别保护：非管理员禁止访问 /settings 与 /docs/providers
+  const adminOnlyPaths = ['/settings', '/docs/providers']
+  if (adminOnlyPaths.includes(to.path) && !userStore.isAdmin) {
+    return '/dashboard'
+  }
+
   return true
 })
 

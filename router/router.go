@@ -87,28 +87,20 @@ func Setup() *gin.Engine {
 				logins.DELETE("/:id", handlers.DeleteLoginRecord)
 				logins.POST("/batch-delete", handlers.BatchDeleteLoginRecords)
 				logins.GET("/export", handlers.ExportLoginRecords)
-				logins.POST("/import", handlers.ImportLoginRecords)
-			}
-
-			// 到期通知模块
-			notifications := authed.Group("/notifications")
-			{
-				notifications.GET("/channels", handlers.ListChannels)
-				notifications.POST("/channels", handlers.CreateChannel)
-				notifications.PUT("/channels/:id", handlers.UpdateChannel)
-				notifications.DELETE("/channels/:id", handlers.DeleteChannel)
-				notifications.POST("/channels/:id/test", handlers.TestChannel)
-				notifications.GET("/logs", handlers.ListNotificationLogs)
 			}
 
 			// 系统设置模块
 			settings := authed.Group("/settings")
-			settings.Use(middleware.AdminOnly())
 			{
+				// 普通用户可读取设置（包含用户级限制），管理员可写入
 				settings.GET("", handlers.ListSettings)
-				settings.PUT("", handlers.UpdateSettings)
-				settings.POST("/test/smtp", handlers.TestSMTP)
-				settings.POST("/test/sms", handlers.TestSMS)
+				adminSettings := settings.Group("")
+				adminSettings.Use(middleware.AdminOnly())
+				{
+					adminSettings.PUT("", handlers.UpdateSettings)
+					adminSettings.POST("/test/smtp", handlers.TestSMTP)
+					adminSettings.POST("/test/sms", handlers.TestSMS)
+				}
 			}
 
 			// 用户管理模块（管理员）

@@ -12,19 +12,8 @@ export const deleteLogin = (id) => request.delete(`/logins/${id}`)
 export const batchDeleteLogins = (ids) => request.post('/logins/batch-delete', { ids })
 export const exportLogins = (params) =>
   request.get('/logins/export', { params, responseType: 'blob' })
-export const importLogins = (formData) =>
-  request.post('/logins/import', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  })
+// importLogins removed: importing login records is disabled
 
-// 通知渠道与日志
-export const listChannels = () => request.get('/notifications/channels')
-export const createChannel = (data) => request.post('/notifications/channels', data)
-export const updateChannel = (id, data) => request.put(`/notifications/channels/${id}`, data)
-export const deleteChannel = (id) => request.delete(`/notifications/channels/${id}`)
-export const testChannel = (id) => request.post(`/notifications/channels/${id}/test`)
-export const listNotificationLogs = (params) =>
-  request.get('/notifications/logs', { params })
 
 // 系统设置
 export const getSettings = () => request.get('/settings')

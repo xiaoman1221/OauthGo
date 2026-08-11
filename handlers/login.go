@@ -69,8 +69,34 @@ func ListLoginRecords(c *gin.Context) {
 		pageSize = 20
 	}
 
+	// 基础查询
 	query := database.DB.Model(&models.LoginRecord{})
+	// 非管理员限制：仅显示当前用户所拥有应用产生的登录记录
+	roleAny, _ := c.Get("role")
+	userAny, _ := c.Get("user_id")
+	role, _ := roleAny.(string)
+	if role != "admin" {
+		uid, _ := userAny.(uint)
+		var appIDs []uint
+		database.DB.Model(&models.App{}).Where("owner_id = ?", uid).Pluck("id", &appIDs)
+		if len(appIDs) == 0 {
+			utils.Success(c, gin.H{"list": []loginRecordItem{}, "total": 0})
+			return
+		}
+		query = query.Where("app_id IN ?", appIDs)
+	}
+
 	if appID := c.Query("app_id"); appID != "" {
+		// 若非管理员且指定 app_id，不属于用户的 app 则返回空
+		if role != "admin" {
+			uid, _ := userAny.(uint)
+			var cnt int64
+			database.DB.Model(&models.App{}).Where("id = ? AND owner_id = ?", appID, uid).Count(&cnt)
+			if cnt == 0 {
+				utils.Success(c, gin.H{"list": []loginRecordItem{}, "total": 0})
+				return
+			}
+		}
 		query = query.Where("app_id = ?", appID)
 	}
 	if keyword := c.Query("keyword"); keyword != "" {
@@ -103,6 +129,31 @@ func DeleteLoginRecord(c *gin.Context) {
 		utils.FailBadRequest(c, "参数错误")
 		return
 	}
+
+	var rec models.LoginRecord
+	if err := database.DB.First(&rec, id).Error; err != nil {
+		utils.FailNotFound(c, "记录不存在")
+		return
+	}
+
+	// 权限校验：非管理员仅能删除属于自己应用的记录
+	roleAny, _ := c.Get("role")
+	userAny, _ := c.Get("user_id")
+	role, _ := roleAny.(string)
+	if role != "admin" {
+		uid, _ := userAny.(uint)
+		if rec.AppID == 0 {
+			utils.FailForbidden(c)
+			return
+		}
+		var cnt int64
+		database.DB.Model(&models.App{}).Where("id = ? AND owner_id = ?", rec.AppID, uid).Count(&cnt)
+		if cnt == 0 {
+			utils.FailForbidden(c)
+			return
+		}
+	}
+
 	if err := database.DB.Delete(&models.LoginRecord{}, id).Error; err != nil {
 		utils.FailInternal(c, "删除失败")
 		return
@@ -123,6 +174,26 @@ func BatchDeleteLoginRecords(c *gin.Context) {
 		utils.FailBadRequest(c, "请选择要删除的记录")
 		return
 	}
+
+	roleAny, _ := c.Get("role")
+	userAny, _ := c.Get("user_id")
+	role, _ := roleAny.(string)
+	if role != "admin" {
+		uid, _ := userAny.(uint)
+		var appIDs []uint
+		database.DB.Model(&models.App{}).Where("owner_id = ?", uid).Pluck("id", &appIDs)
+		if len(appIDs) == 0 {
+			utils.FailForbidden(c)
+			return
+		}
+		var cnt int64
+		database.DB.Model(&models.LoginRecord{}).Where("id IN ? AND app_id IN ?", req.IDs, appIDs).Count(&cnt)
+		if cnt != int64(len(req.IDs)) {
+			utils.FailForbidden(c)
+			return
+		}
+	}
+
 	if err := database.DB.Delete(&models.LoginRecord{}, req.IDs).Error; err != nil {
 		utils.FailInternal(c, "删除失败")
 		return
@@ -133,7 +204,45 @@ func BatchDeleteLoginRecords(c *gin.Context) {
 // ExportLoginRecords CSV 导出登录记录
 func ExportLoginRecords(c *gin.Context) {
 	query := database.DB.Model(&models.LoginRecord{})
+	// 非管理员限制：仅导出当前用户所拥有应用产生的登录记录
+	roleAny, _ := c.Get("role")
+	userAny, _ := c.Get("user_id")
+	role, _ := roleAny.(string)
+	if role != "admin" {
+		uid, _ := userAny.(uint)
+		var appIDs []uint
+		database.DB.Model(&models.App{}).Where("owner_id = ?", uid).Pluck("id", &appIDs)
+		if len(appIDs) == 0 {
+			// 导出空文件
+			var records []models.LoginRecord
+			tmpPath := filepath.Join(os.TempDir(), "login_records.csv")
+			_ = utils.ExportLoginRecordsToCSV(tmpPath, records)
+			defer os.Remove(tmpPath)
+			c.Header("Content-Type", "text/csv; charset=utf-8")
+			c.Header("Content-Disposition", "attachment; filename=login_records.csv")
+			c.File(tmpPath)
+			return
+		}
+		query = query.Where("app_id IN ?", appIDs)
+	}
+
 	if appID := c.Query("app_id"); appID != "" {
+		if role != "admin" {
+			uid, _ := userAny.(uint)
+			var cnt int64
+			database.DB.Model(&models.App{}).Where("id = ? AND owner_id = ?", appID, uid).Count(&cnt)
+			if cnt == 0 {
+				// 导出空文件
+				var records []models.LoginRecord
+				tmpPath := filepath.Join(os.TempDir(), "login_records.csv")
+				_ = utils.ExportLoginRecordsToCSV(tmpPath, records)
+				defer os.Remove(tmpPath)
+				c.Header("Content-Type", "text/csv; charset=utf-8")
+				c.Header("Content-Disposition", "attachment; filename=login_records.csv")
+				c.File(tmpPath)
+				return
+			}
+		}
 		query = query.Where("app_id = ?", appID)
 	}
 	if keyword := c.Query("keyword"); keyword != "" {
@@ -156,33 +265,8 @@ func ExportLoginRecords(c *gin.Context) {
 	c.File(tmpPath)
 }
 
-// ImportLoginRecords CSV 导入登录记录
+// ImportLoginRecords has been removed: importing login records is disabled by policy
 func ImportLoginRecords(c *gin.Context) {
-	file, err := c.FormFile("file")
-	if err != nil {
-		utils.FailBadRequest(c, "请上传 CSV 文件")
-		return
-	}
-
-	tmpPath := filepath.Join(os.TempDir(), file.Filename)
-	if err := c.SaveUploadedFile(file, tmpPath); err != nil {
-		utils.FailInternal(c, "文件保存失败")
-		return
-	}
-	defer os.Remove(tmpPath)
-
-	records, err := utils.ImportLoginRecordsFromCSV(tmpPath)
-	if err != nil {
-		utils.FailBadRequest(c, "CSV 解析失败："+err.Error())
-		return
-	}
-	if len(records) == 0 {
-		utils.Success(c, gin.H{"imported": 0})
-		return
-	}
-	if err := database.DB.Create(&records).Error; err != nil {
-		utils.FailInternal(c, "导入失败")
-		return
-	}
-	utils.Success(c, gin.H{"imported": len(records)})
+	utils.FailForbidden(c)
+	return
 }

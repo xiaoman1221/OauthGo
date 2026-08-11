@@ -1,5 +1,5 @@
 <template>
-  <div class="login-page">
+  <div class="login-page" :style="loginBgStyle">
     <el-card class="login-card">
       <h2 class="title">OauthGo 统一授权管理</h2>
       <el-form ref="formRef" :model="form" :rules="rules" size="large">
@@ -34,11 +34,11 @@
       </div>
 
       <div class="links">
-        <el-link type="primary" :underline="false" href="/docs" target="_blank">接口文档</el-link>
+        <el-link type="primary" underline="never" href="/docs" target="_blank">接口文档</el-link>
         <el-divider direction="vertical" />
-        <el-link type="primary" :underline="false" @click="onRegister">注册账号</el-link>
+        <el-link type="primary" underline="never" @click="onRegister">注册账号</el-link>
         <el-divider direction="vertical" />
-        <el-link type="primary" :underline="false" @click="router.push('/forgot-password')">
+        <el-link type="primary" underline="never" @click="router.push('/forgot-password')">
           忘记密码
         </el-link>
       </div>
@@ -47,7 +47,7 @@
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
+import { reactive, ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
@@ -61,6 +61,8 @@ const formRef = ref()
 const loading = ref(false)
 const providers = ref([])
 const form = reactive({ username: '', password: '' })
+const authConfig = ref({})
+
 const rules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
@@ -68,10 +70,30 @@ const rules = {
 
 onMounted(async () => {
   try {
-    providers.value = await publicProviders()
+    const [cfg, provs] = await Promise.all([
+      fetch('/api/auth/config').then((r) => r.json()).then((r) => r.data).catch(() => ({})),
+      publicProviders().catch(() => [])
+    ])
+    authConfig.value = cfg || {}
+    providers.value = provs || []
   } catch (e) {
-    // 忽略渠道加载失败
+    // 忽略加载失败
   }
+})
+
+const loginBgStyle = computed(() => {
+  const mode = authConfig.value.login_bg_mode || 'color'
+  if (mode === 'color') {
+    return { background: authConfig.value.login_bg_color || 'linear-gradient(135deg, #1f4037 0%, #99f2c8 100%)' }
+  }
+  if (mode === 'image') {
+    const url = authConfig.value.login_bg_image_url || ''
+    return { backgroundImage: url ? `url(${url})` : '', backgroundSize: 'cover', backgroundPosition: 'center' }
+  }
+  if (mode === 'bing') {
+    return { backgroundImage: `url(/api/site/bing-daily)`, backgroundSize: 'cover', backgroundPosition: 'center' }
+  }
+  return {}
 })
 
 async function onLogin() {

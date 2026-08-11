@@ -1,80 +1,90 @@
 <template>
   <div class="provider-docs">
-    <el-card class="intro-card">
-      <template #header>
-        <div class="card-header">
-          <span>第三方渠道接入文档</span>
-          <span class="tip">统一授权管理平台支持的第三方登录渠道接入说明</span>
-        </div>
-      </template>
-      <p>
-        OauthGo 聚合了国内主流第三方登录渠道。接入流程为：在对应开放平台创建应用 → 获取凭据 →
-        在「登录渠道」中配置 → 将回调地址填入开放平台。配置完成后，开启「应用于主站登录」即可在主站登录页展示。
-      </p>
-      <p class="muted">
-        每个渠道的当前凭据（AppID / AppKey）与接入步骤、回调配置说明如下，点击「接入地址」可直接跳转到对应开放平台的注册/创建页面。
-      </p>
-    </el-card>
-
-    <div class="docs-grid">
-      <el-card v-for="c in channelList" :key="c.name" class="channel-card">
+    <div v-if="userStore.isAdmin">
+      <el-card class="intro-card">
         <template #header>
           <div class="card-header">
-            <div class="channel-title">
-              <span class="channel-name">{{ c.displayName }}</span>
-              <el-tag size="small" :type="c.category === 'enterprise' ? 'warning' : 'primary'">
-                {{ c.category === 'enterprise' ? '企业' : '社交' }}
-              </el-tag>
-              <span class="channel-key">{{ c.name }}</span>
-            </div>
-            <el-link v-if="c.registerUrl" type="primary" :href="c.registerUrl" target="_blank">
-              {{ c.registerLabel }} →
-            </el-link>
+            <span>第三方渠道接入文档</span>
+            <span class="tip">统一授权管理平台支持的第三方登录渠道接入说明</span>
           </div>
         </template>
-
-        <p class="tips">{{ c.tips }}</p>
-
-        <el-divider content-position="left">当前配置</el-divider>
-        <div class="credential">
-          <div class="credential-row">
-            <span class="credential-label">{{ c.idLabel }}</span>
-            <code class="credential-value" :class="{ empty: !credOf(c).client_id }">
-              {{ credOf(c).client_id || '未配置' }}
-            </code>
-            <el-button v-if="credOf(c).client_id" size="small" text type="primary"
-              @click="copy(credOf(c).client_id)">复制</el-button>
-          </div>
-          <div class="credential-row">
-            <span class="credential-label">{{ c.secretLabel }}</span>
-            <code class="credential-value" :class="{ empty: !credOf(c).client_secret }">
-              {{ credOf(c).client_secret || '未配置' }}
-            </code>
-            <el-button v-if="credOf(c).client_secret" size="small" text type="primary"
-              @click="copy(credOf(c).client_secret)">复制</el-button>
-          </div>
-        </div>
-
-        <el-divider content-position="left">所需信息</el-divider>
-        <div class="fields">
-          <el-tag v-for="f in c.fields" :key="f" size="small" class="field-tag">{{ f }}</el-tag>
-        </div>
-
-        <el-divider content-position="left">接入步骤</el-divider>
-        <ol class="steps">
-          <li v-for="(s, i) in c.steps" :key="i">{{ s }}</li>
-        </ol>
-
-        <el-divider content-position="left">回调地址配置</el-divider>
-        <el-alert :title="c.callbackNote" type="info" :closable="false" class="callback-note" />
-
-        <template v-if="c.notes.length">
-          <el-divider content-position="left">注意事项</el-divider>
-          <ul class="notes">
-            <li v-for="(n, i) in c.notes" :key="i">{{ n }}</li>
-          </ul>
-        </template>
+        <p>
+          OauthGo 聚合了国内主流第三方登录渠道。接入流程为：在对应开放平台创建应用 → 获取凭据 →
+          在「登录渠道」中配置 → 将回调地址填入开放平台。配置完成后，开启「应用于主站登录」即可在主站登录页展示。
+        </p>
+        <p class="muted">
+          每个渠道的当前凭据（AppID / AppKey）与接入步骤、回调配置说明如下，点击「接入地址」可直接跳转到对应开放平台的注册/创建页面。
+        </p>
       </el-card>
+
+      <div class="docs-grid">
+        <el-card v-for="c in channelList" :key="c.name" class="channel-card">
+          <template #header>
+            <div class="card-header">
+              <div class="channel-title">
+                <span class="channel-name">{{ c.displayName }}</span>
+                <el-tag size="small" :type="c.category === 'enterprise' ? 'warning' : 'primary'">
+                  {{ c.category === 'enterprise' ? '企业' : '社交' }}
+                </el-tag>
+                <span class="channel-key">{{ c.name }}</span>
+              </div>
+              <el-link v-if="c.registerUrl" type="primary" :href="c.registerUrl" target="_blank">
+                {{ c.registerLabel }} →
+              </el-link>
+            </div>
+          </template>
+
+          <p class="tips">{{ c.tips }}</p>
+
+          <el-divider content-position="left">当前配置</el-divider>
+          <div class="credential">
+            <div class="credential-row">
+              <span class="credential-label">{{ c.idLabel }}</span>
+              <code class="credential-value" :class="{ empty: !credOf(c).client_id }">
+                {{ credOf(c).client_id || '未配置' }}
+              </code>
+              <el-button v-if="credOf(c).client_id" size="small" text type="primary"
+                @click="copy(credOf(c).client_id)">复制</el-button>
+            </div>
+            <div class="credential-row">
+              <span class="credential-label">{{ c.secretLabel }}</span>
+              <code class="credential-value" :class="{ empty: !credOf(c).client_secret }">
+                {{ credOf(c).client_secret || '未配置' }}
+              </code>
+              <el-button v-if="credOf(c).client_secret" size="small" text type="primary"
+                @click="copy(credOf(c).client_secret)">复制</el-button>
+            </div>
+          </div>
+
+          <el-divider content-position="left">所需信息</el-divider>
+          <div class="fields">
+            <el-tag v-for="f in c.fields" :key="f" size="small" class="field-tag">{{ f }}</el-tag>
+          </div>
+
+          <el-divider content-position="left">接入步骤</el-divider>
+          <ol class="steps">
+            <li v-for="(s, i) in c.steps" :key="i">{{ s }}</li>
+          </ol>
+
+          <el-divider content-position="left">回调地址配置</el-divider>
+          <el-alert :title="c.callbackNote" type="info" :closable="false" class="callback-note" />
+
+          <template v-if="c.notes.length">
+            <el-divider content-position="left">注意事项</el-divider>
+            <ul class="notes">
+              <li v-for="(n, i) in c.notes" :key="i">{{ n }}</li>
+            </ul>
+          </template>
+        </el-card>
+      </div>
+    </div>
+
+    <div v-else>
+      <el-empty description="无权限访问">
+        <template #footer>
+          <el-button type="primary" @click="$router.push('/')">返回仪表盘</el-button>
+        </template>
+      </el-empty>
     </div>
   </div>
 </template>
@@ -84,13 +94,17 @@ import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { listProviders } from '../api/modules'
 import { channelList } from '../utils/providerDocs'
+import { useUserStore } from '../stores/user'
 
 const creds = ref({})
+const userStore = useUserStore()
 
 onMounted(async () => {
   try {
-    const data = await listProviders()
-    for (const p of data.list) {
+    // admin listProviders returns { list: [...] }, publicProviders returns [...]
+    const raw = userStore.isAdmin ? await listProviders() : await publicProviders()
+    const arr = Array.isArray(raw) ? raw : (raw && raw.list) ? raw.list : []
+    for (const p of arr) {
       creds.value[p.name] = { client_id: p.client_id || '', client_secret: p.client_secret || '' }
     }
   } catch (e) {
