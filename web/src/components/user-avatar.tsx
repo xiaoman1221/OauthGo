@@ -1,5 +1,6 @@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { avatarFor } from '@/lib/avatar'
+import { useAvatarStore } from '@/store/avatar'
 
 export function UserAvatar({
   avatar,
@@ -12,7 +13,17 @@ export function UserAvatar({
   username?: string | null
   size?: 'sm' | 'md' | 'lg'
 }) {
-  const src = avatarFor(avatar, email, username)
+  const settings = useAvatarStore((s) => s.settings)
+  const px = size === 'sm' ? 48 : size === 'lg' ? 128 : 72
+  const src = avatarFor({
+    avatar,
+    email,
+    username,
+    size: px,
+    source: settings.source,
+    mirrorEnabled: settings.mirrorEnabled,
+    mirrorUrl: settings.mirrorUrl
+  })
   const cls = size === 'sm' ? 'h-6 w-6' : size === 'lg' ? 'h-16 w-16' : 'h-9 w-9'
   return (
     <Avatar className={cls}>

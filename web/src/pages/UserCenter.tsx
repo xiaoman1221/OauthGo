@@ -224,7 +224,7 @@ export default function UserCenter() {
             <div className="max-w-xl space-y-5">
               <div className="flex items-center gap-4">
                 <UserAvatar avatar={avatar} email={email} username={username} size="lg" />
-                <div className="text-xs text-muted-foreground">头像支持：QQ 头像（QQ 邮箱）或 Gravatar</div>
+                <div className="text-xs text-muted-foreground">头像支持：QQ 头像（QQ 邮箱）或 Gravatar（镜像地址可在系统设置中配置）</div>
               </div>
               <Field label="头像地址">
                 <Input value={avatar} onChange={(e) => setAvatar(e.target.value)} placeholder="http(s) 图片地址，留空则自动使用 QQ 头像 / Gravatar" />

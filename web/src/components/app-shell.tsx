@@ -31,6 +31,7 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { useIsAdmin, useUserStore } from '@/store/user'
+import { useAvatarStore } from '@/store/avatar'
 
 const TITLES: Record<string, string> = {
   '/dashboard': '仪表盘',
@@ -71,13 +72,18 @@ export function AppShell() {
   const userInfo = useUserStore((s) => s.userInfo)
   const logout = useUserStore((s) => s.logout)
   const fetchUser = useUserStore((s) => s.fetchUser)
+  const loadAvatarSettings = useAvatarStore((s) => s.load)
+  const avatarLoaded = useAvatarStore((s) => s.loaded)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   useEffect(() => {
     if (!userInfo) {
       fetchUser().catch(() => {})
     }
-  }, [userInfo, fetchUser])
+    if (!avatarLoaded) {
+      loadAvatarSettings()
+    }
+  }, [userInfo, fetchUser, avatarLoaded, loadAvatarSettings])
 
   const title = TITLES[location.pathname] || '统一授权管理'
 

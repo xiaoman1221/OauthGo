@@ -44,6 +44,11 @@ func DefaultSettingDefs() []SettingDef {
 		{Key: "code_length", Value: "6", Description: "验证码长度", Group: "security"},
 		{Key: "code_expire_minutes", Value: "10", Description: "验证码有效期（分钟）", Group: "security"},
 
+		// 头像设置
+		{Key: "avatar_source", Value: "auto", Description: "头像来源（auto：QQ邮箱自动用QQ头像，其余用Gravatar / qq：仅QQ邮箱用QQ头像 / gravatar：全部使用Gravatar）", Group: "avatar"},
+		{Key: "gravatar_mirror_enabled", Value: "1", Description: "启用 Gravatar 镜像站", Group: "avatar"},
+		{Key: "gravatar_mirror", Value: "https://cravatar.cn/avatar", Description: "Gravatar 镜像站地址（国内默认 Cravatar，留空则使用官方 gravatar.com）", Group: "avatar"},
+
 		// SOCKS5 代理设置（用于境外登录渠道，需在各渠道中开启「使用代理」）
 		{Key: "proxy_enabled", Value: "0", Description: "启用 SOCKS5 代理", Group: "proxy"},
 		{Key: "proxy_addr", Value: "", Description: "SOCKS5 代理地址（host:port）", Group: "proxy"},

@@ -15,17 +15,19 @@ import {
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { settingsApi, type SettingDef } from '@/lib/api'
+import { useAvatarStore } from '@/store/avatar'
 
 const GROUP_LABELS: Record<string, string> = {
   site: '站点设置',
   security: '安全设置',
+  avatar: '头像设置',
   smtp: 'SMTP 邮件',
   sms: '短信设置',
   proxy: '代理设置',
   template: '邮件模板'
 }
 
-const BOOL_KEYS = ['register_enabled', 'register_email_verify', 'smtp_enabled', 'smtp_tls', 'proxy_enabled']
+const BOOL_KEYS = ['register_enabled', 'register_email_verify', 'smtp_enabled', 'smtp_tls', 'proxy_enabled', 'gravatar_mirror_enabled']
 
 const SMS_PROVIDERS = [
   { value: 'none', label: '未启用' },
@@ -87,6 +89,8 @@ export default function Settings() {
         .filter((item) => values[item.key] !== '********')
         .map((item) => ({ key: item.key, value: values[item.key] || '' }))
       await settingsApi.update(payload)
+      // 头像设置可能已变更，刷新头像配置（侧边栏/列表头像即时生效）
+      await useAvatarStore.getState().load().catch(() => {})
       toast.success('保存成功')
     } catch (err) {
       toast.error((err as Error).message)
@@ -207,11 +211,22 @@ export default function Settings() {
             </div>
           </TabsContent>
 
-          {(['security', 'smtp', 'sms', 'proxy', 'template'] as const).map((g) => (
+          {(['avatar', 'security', 'smtp', 'sms', 'proxy', 'template'] as const).map((g) => (
             <TabsContent key={g} value={g} className="mt-0 space-y-5">
               {visibleItems.map((item) => (
                 <SettingRow key={item.key} label={item.description} hint={item.key}>
-                  {item.key === 'sms_provider' ? (
+                  {item.key === 'avatar_source' ? (
+                    <Select value={values[item.key] || 'auto'} onValueChange={(v) => set(item.key, v)}>
+                      <SelectTrigger className="w-72">
+                        <SelectValue placeholder="选择头像来源" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="auto">自动（QQ 邮箱用 QQ 头像，其余用 Gravatar）</SelectItem>
+                        <SelectItem value="qq">仅 QQ 邮箱使用 QQ 头像</SelectItem>
+                        <SelectItem value="gravatar">全部使用 Gravatar</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  ) : item.key === 'sms_provider' ? (
                     <Select value={values[item.key] || 'none'} onValueChange={(v) => set(item.key, v)}>
                       <SelectTrigger className="w-52">
                         <SelectValue placeholder="选择短信服务商" />
