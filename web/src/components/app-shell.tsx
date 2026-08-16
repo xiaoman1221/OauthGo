@@ -15,7 +15,6 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { UserAvatar } from '@/components/user-avatar'
-import { Scene3D } from '@/components/scene-3d'
 import {
   Dialog,
   DialogContent,
@@ -105,9 +104,6 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* 全局统一背景（三维流动，仪表盘等所有页面一致） */}
-      <Scene3D className="pointer-events-none fixed inset-0 z-0" />
-
       {/* 侧边栏 */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-56 flex-col border-r border-border bg-background md:flex">
         <div className="flex h-14 items-center border-b border-border px-5">
@@ -222,7 +218,7 @@ export function AppShell() {
             <ThemeToggle />
           </div>
         </header>
-        <main className="relative z-10 mx-auto w-full max-w-6xl px-5 py-8 md:px-8 md:py-10">
+        <main className="mx-auto w-full max-w-6xl px-5 py-8 md:px-8 md:py-10">
           <div key={location.pathname} className="animate-fade-in">
             <Outlet />
           </div>
