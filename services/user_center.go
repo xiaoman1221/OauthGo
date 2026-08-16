@@ -23,6 +23,29 @@ var bindSessionStore = struct {
 	m map[string]BindSession
 }{m: map[string]BindSession{}}
 
+const bindSessionTTL = 10 * time.Minute
+
+// startBindSessionJanitor 定期清理过期会话，避免未完成的绑定会话无限累积
+func startBindSessionJanitor() {
+	go func() {
+		ticker := time.NewTicker(bindSessionTTL)
+		defer ticker.Stop()
+		for range ticker.C {
+			bindSessionStore.Lock()
+			for s, sess := range bindSessionStore.m {
+				if time.Since(sess.CreatedAt) > bindSessionTTL {
+					delete(bindSessionStore.m, s)
+				}
+			}
+			bindSessionStore.Unlock()
+		}
+	}()
+}
+
+func init() {
+	startBindSessionJanitor()
+}
+
 // CreateBindSession 创建绑定会话并返回 state（由渠道回调带回）
 func CreateBindSession(userID uint, providerName string) string {
 	state := utils.RandomString(32)
@@ -45,7 +68,7 @@ func ResolveBindSession(state string) (BindSession, bool) {
 		return BindSession{}, false
 	}
 	delete(bindSessionStore.m, state)
-	if time.Since(s.CreatedAt) > 10*time.Minute {
+	if time.Since(s.CreatedAt) > bindSessionTTL {
 		return BindSession{}, false
 	}
 	return s, true

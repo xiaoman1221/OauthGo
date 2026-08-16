@@ -91,15 +91,19 @@ func (p *AlipayProvider) GetUserInfo(code string) (*UserInfo, error) {
 	if err := p.callGateway(infoParams, privateKey, &userResp); err != nil {
 		return nil, err
 	}
+	infoResp := userResp.AlipayUserInfoShareResponse
+	if infoResp.Code != "" && infoResp.Code != "10000" {
+		return nil, fmt.Errorf("支付宝获取用户信息失败: %s %s", infoResp.Code, infoResp.Msg)
+	}
 	if userID == "" {
-		userID = userResp.AlipayUserInfoShareResponse.UserID
+		userID = infoResp.UserID
 	}
 
 	return &UserInfo{
 		OpenID:   userID,
-		Nickname: userResp.AlipayUserInfoShareResponse.NickName,
-		Avatar:   userResp.AlipayUserInfoShareResponse.Avatar,
-		Email:    userResp.AlipayUserInfoShareResponse.Email,
+		Nickname: infoResp.NickName,
+		Avatar:   infoResp.Avatar,
+		Email:    infoResp.Email,
 	}, nil
 }
 

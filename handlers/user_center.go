@@ -153,7 +153,6 @@ func ChangePassword(c *gin.Context) {
 		utils.FailBadRequest(c, err.Error())
 		return
 	}
-	database.DB.Model(&user).Update("password_set", true)
 	utils.SuccessMsg(c, "密码修改成功")
 }
 

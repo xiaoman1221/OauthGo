@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"OauthGo/models"
-	"OauthGo/providers"
 	"OauthGo/services"
 
 	"github.com/gin-gonic/gin"
@@ -66,7 +65,7 @@ func buildLoginURL(app *models.App, typeName, redirectURI string) (string, strin
 		return "", "回跳地址不在允许范围内"
 	}
 
-	prov, ok := LoadProvider(providerName)
+	prov, ok := loadProvider(providerName)
 	if !ok {
 		return "", "登录渠道未配置或未启用"
 	}
@@ -282,9 +281,4 @@ func RESTQuery(c *gin.Context) {
 		"location": record.Location,
 		"ip":       record.IP,
 	})
-}
-
-// LoadProvider 从数据库加载渠道配置并构建适配器（导出，供聚合接口使用）
-func LoadProvider(name string) (providers.Provider, bool) {
-	return loadProvider(name)
 }

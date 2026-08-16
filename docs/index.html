@@ -6,143 +6,132 @@
 <title>OauthGo 第三方登录接入文档</title>
 <style>
   :root {
-    --dark: #001529;
-    --dark2: #10243e;
-    --green: #3bb893;
-    --green2: #1f4037;
-    --text: #2c3e50;
-    --muted: #8a94a6;
-    --border: #e8ecf1;
-    --code-bg: #0f2236;
-    --code-text: #d7e3f0;
+    --bg: #fafafa;
+    --fg: #18181b;
+    --muted: #71717a;
+    --border: #e4e4e7;
+    --card: #ffffff;
+    --code-bg: #f4f4f5;
+    --code-fg: #27272a;
+    --accent: #18181b;
+    --accent-fg: #fafafa;
+  }
+  html.dark {
+    --bg: #09090b;
+    --fg: #f4f4f5;
+    --muted: #a1a1aa;
+    --border: #27272a;
+    --card: #0d0d0f;
+    --code-bg: #18181b;
+    --code-fg: #e4e4e7;
+    --accent: #fafafa;
+    --accent-fg: #09090b;
   }
   * { box-sizing: border-box; }
+  html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
   body {
     margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
-    color: var(--text);
-    background: #f5f7fa;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    font-size: 14px;
+    line-height: 1.8;
   }
-  .header {
-    background: linear-gradient(120deg, var(--dark2), var(--green2));
-    color: #fff;
-    padding: 32px 24px 24px;
+  a { color: var(--fg); }
+
+  /* 顶栏：白底发丝线，与前端保持一致 */
+  .header { background: var(--card); border-bottom: 1px solid var(--border); }
+  .header .wrap { max-width: 1080px; margin: 0 auto; padding: 20px 24px 22px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 500; letter-spacing: -0.01em; }
+  .brand .mark {
+    width: 26px; height: 26px; border-radius: 6px;
+    background: var(--accent); color: var(--accent-fg);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 600;
   }
-  .header .wrap { max-width: 1080px; margin: 0 auto; }
-  .header h1 { margin: 0 0 8px; font-size: 26px; }
-  .header p { margin: 0 0 16px; color: #c7d5e4; font-size: 14px; line-height: 1.8; }
+  .header h1 { margin: 18px 0 6px; font-size: 26px; font-weight: 300; letter-spacing: -0.02em; }
+  .header p { margin: 0; color: var(--muted); font-size: 14px; }
+  .header .links { margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
   .header .links a {
-    display: inline-block;
-    margin-right: 12px;
-    padding: 7px 16px;
-    border-radius: 6px;
-    background: var(--green);
-    color: #fff;
-    text-decoration: none;
-    font-size: 13px;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 16px; border-radius: 6px;
+    background: var(--accent); color: var(--accent-fg);
+    text-decoration: none; font-size: 13px; font-weight: 500;
+    transition: opacity .15s ease;
   }
+  .header .links a:hover { opacity: .85; }
   .header .links a.ghost {
-    background: rgba(255,255,255,.14);
-    border: 1px solid rgba(255,255,255,.35);
+    background: transparent; color: var(--fg);
+    border: 1px solid var(--border);
   }
+
+  /* 页签：发丝线 + 黑色下划线指示 */
   .tabs {
-    max-width: 1080px;
-    margin: 20px auto 0;
-    padding: 0 24px;
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
+    max-width: 1080px; margin: 22px auto 0; padding: 0 24px;
+    display: flex; gap: 28px; border-bottom: 1px solid var(--border);
   }
   .tab {
-    padding: 8px 18px;
-    border-radius: 8px 8px 0 0;
-    background: #e3e8ef;
-    color: var(--muted);
-    cursor: pointer;
-    font-size: 14px;
-    border: none;
+    padding: 8px 2px 10px; background: none; border: none; border-bottom: 2px solid transparent;
+    color: var(--muted); cursor: pointer; font-size: 14px; font-family: inherit;
+    transition: color .15s ease, border-color .15s ease;
   }
-  .tab.active { background: #fff; color: var(--green2); font-weight: 600; }
-  .container {
-    max-width: 1080px;
-    margin: 0 auto 40px;
-    padding: 0 24px 40px;
-  }
+  .tab:hover { color: var(--fg); }
+  .tab.active { color: var(--fg); font-weight: 500; border-bottom-color: var(--fg); }
+
+  /* 内容面板 */
+  .container { max-width: 1080px; margin: 0 auto 48px; padding: 0 24px; }
   .panel {
-    display: none;
-    background: #fff;
-    border: 1px solid var(--border);
-    border-radius: 0 10px 10px 10px;
+    display: none; background: var(--card);
+    border: 1px solid var(--border); border-radius: 8px;
     padding: 28px 32px;
   }
-  .panel.active { display: block; }
-  h2 { font-size: 20px; margin: 28px 0 12px; color: var(--dark2); }
+  .panel.active { display: block; animation: fadeIn .2s ease-out; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+  h2 { font-size: 20px; font-weight: 500; letter-spacing: -0.01em; margin: 28px 0 12px; }
   h2:first-child { margin-top: 0; }
-  h3 { font-size: 15px; margin: 22px 0 10px; color: var(--green2); }
+  h3 { font-size: 15px; font-weight: 500; margin: 22px 0 10px; }
   p, li { font-size: 14px; line-height: 1.9; }
+
   .alert {
-    border-left: 4px solid var(--green);
-    background: #f0faf6;
-    padding: 10px 14px;
-    border-radius: 4px;
-    font-size: 13px;
-    line-height: 1.9;
-    color: #20503f;
+    border-left: 2px solid var(--fg);
+    background: var(--code-bg);
+    padding: 10px 14px; border-radius: 6px;
+    font-size: 13px; line-height: 1.9;
   }
+
   table { border-collapse: collapse; width: 100%; font-size: 13px; margin: 12px 0 20px; }
   th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
-  th { background: #f7f9fb; color: var(--dark2); white-space: nowrap; }
+  th { background: var(--code-bg); font-weight: 500; white-space: nowrap; }
   td code { white-space: nowrap; }
+
   code {
-    background: #eef2f6;
-    border-radius: 4px;
-    padding: 2px 6px;
-    font-family: "Cascadia Code", Consolas, monospace;
-    font-size: 12.5px;
-    color: #c0392b;
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 4px; padding: 1px 5px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.5px; color: var(--code-fg);
   }
   pre {
-    position: relative;
-    background: var(--code-bg);
-    color: var(--code-text);
-    border-radius: 8px;
-    padding: 14px 16px;
-    overflow-x: auto;
-    font-size: 13px;
-    line-height: 1.7;
-    margin: 10px 0 18px;
+    position: relative; background: var(--code-bg); border: 1px solid var(--border);
+    color: var(--code-fg); border-radius: 6px; padding: 14px 16px;
+    overflow-x: auto; font-size: 13px; line-height: 1.7; margin: 10px 0 18px;
   }
-  pre code { background: transparent; color: inherit; padding: 0; font-size: 13px; }
+  pre code { background: transparent; border: none; padding: 0; font-size: 13px; }
   .copy-btn {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    background: rgba(255,255,255,.12);
-    border: 1px solid rgba(255,255,255,.25);
-    color: #fff;
-    border-radius: 5px;
-    padding: 3px 10px;
-    font-size: 12px;
-    cursor: pointer;
+    position: absolute; top: 8px; right: 8px;
+    background: var(--card); border: 1px solid var(--border); color: var(--muted);
+    border-radius: 5px; padding: 3px 10px; font-size: 12px; cursor: pointer;
+    opacity: 0; transition: opacity .15s ease, color .15s ease;
   }
-  .copy-btn:hover { background: rgba(255,255,255,.22); }
+  pre:hover .copy-btn { opacity: 1; }
+  .copy-btn:hover { color: var(--fg); }
+
   .flow { margin: 16px 0 22px; }
-  .flow .step {
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    margin-bottom: 14px;
-  }
+  .flow .step { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
   .flow .num {
-    flex: 0 0 26px;
-    height: 26px;
-    line-height: 26px;
-    text-align: center;
-    background: var(--green);
-    color: #fff;
-    border-radius: 50%;
-    font-size: 13px;
-    font-weight: 600;
+    flex: 0 0 24px; height: 24px; line-height: 22px; text-align: center;
+    border: 1px solid var(--border); border-radius: 50%;
+    color: var(--muted); font-size: 12.5px; font-weight: 500;
   }
   .flow .txt { font-size: 13.5px; line-height: 1.8; padding-top: 2px; }
   .divider { border: none; border-top: 1px solid var(--border); margin: 30px 0; }
@@ -152,7 +141,11 @@
 
 <div class="header">
   <div class="wrap">
-    <h1>OauthGo 第三方登录接入文档</h1>
+    <div class="brand">
+      <span class="mark">O</span>
+      <span>OauthGo</span>
+    </div>
+    <h1>第三方登录接入文档</h1>
     <p>为其他目标站点提供第三方登录聚合服务。以下两套接口可任选其一接入：<br>
       彩虹聚合登录协议（/connect.php，兼容彩虹官方）与自研 REST 风格接口（/api/v1/oauth/*）。</p>
     <div class="links">
@@ -347,6 +340,16 @@ sign = md5(原串)
 </div>
 
 <script>
+  // 与前端主题联动：读取同源 localStorage('theme')，切换深色/浅色
+  (function () {
+    function applyTheme() {
+      var t = localStorage.getItem('theme');
+      document.documentElement.classList.toggle('dark', t === 'dark');
+    }
+    applyTheme();
+    window.addEventListener('storage', applyTheme);
+  })();
+
   document.querySelectorAll('.tab').forEach(function (tab) {
     tab.addEventListener('click', function () {
       document.querySelectorAll('.tab').forEach(function (t) { t.classList.remove('active'); });

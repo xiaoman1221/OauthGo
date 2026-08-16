@@ -43,6 +43,16 @@ func TestMain(m *testing.M) {
 
 const testTarget = "https://target.example.com/callback"
 
+func enableTestProviders() {
+	for _, p := range []string{"gitee", "wechat"} {
+		database.DB.Model(&models.Provider{}).Where("name = ?", p).Updates(map[string]interface{}{
+			"enabled":       true,
+			"client_id":     "test-client",
+			"client_secret": "test-secret",
+		})
+	}
+}
+
 func seedApp(t *testing.T) models.App {
 	t.Helper()
 	app := models.App{
@@ -58,13 +68,28 @@ func seedApp(t *testing.T) models.App {
 	if err := database.DB.Create(&app).Error; err != nil {
 		t.Fatalf("创建应用失败: %v", err)
 	}
-	for _, p := range []string{"gitee", "wechat"} {
-		database.DB.Model(&models.Provider{}).Where("name = ?", p).Updates(map[string]interface{}{
-			"enabled":       true,
-			"client_id":     "test-client",
-			"client_secret": "test-secret",
-		})
+	enableTestProviders()
+	return app
+}
+
+// seedOwnedApp 创建归属于指定用户的测试应用（用于非管理员权限相关测试）
+func seedOwnedApp(t *testing.T, ownerID uint) models.App {
+	t.Helper()
+	app := models.App{
+		OwnerID:  ownerID,
+		Name:     "测试站点",
+		Platform: "web",
+		AppID:    "t" + utils.RandomString(15),
+		AppKey:   utils.RandomString(32),
+		Mode:     services.ModeCompat,
+		Types:    `["gitee","wechat"]`,
+		Domains:  "target.example.com",
+		Status:   1,
 	}
+	if err := database.DB.Create(&app).Error; err != nil {
+		t.Fatalf("创建应用失败: %v", err)
+	}
+	enableTestProviders()
 	return app
 }
 
@@ -508,17 +533,18 @@ func TestDocsRoutes(t *testing.T) {
 
 // TestLoginRecordAccountLabel 登录记录用户名按登录方式展示（QQ号 / OpenID 等）
 func TestLoginRecordAccountLabel(t *testing.T) {
-	_, token := testUser(t)
+	user, token := testUser(t)
+	app := seedOwnedApp(t, user.ID)
 	database.DB.Create(&models.LoginRecord{
-		AppID: 1, AppName: "测试站", OpenID: "qq-openid-001", Nickname: "QQ用户",
+		AppID: app.ID, AppName: "测试站", OpenID: "qq-openid-001", Nickname: "QQ用户",
 		Platform: "qq", IP: "1.2.3.4", Status: 1, UserAgent: "Mozilla/5.0",
 	})
 	database.DB.Create(&models.LoginRecord{
-		AppID: 1, AppName: "测试站", OpenID: "wx-openid-002", Nickname: "微信用户",
+		AppID: app.ID, AppName: "测试站", OpenID: "wx-openid-002", Nickname: "微信用户",
 		Platform: "wechat", IP: "1.2.3.4", Status: 1,
 	})
 	database.DB.Create(&models.LoginRecord{
-		AppID: 1, AppName: "测试站", Username: "imported_user", Nickname: "导入用户",
+		AppID: app.ID, AppName: "测试站", Username: "imported_user", Nickname: "导入用户",
 		Platform: "qq", IP: "1.2.3.4", Status: 1,
 	})
 

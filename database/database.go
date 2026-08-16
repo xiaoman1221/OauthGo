@@ -116,7 +116,7 @@ func backfillUserProfile() {
 	var users []models.User
 	DB.Where("nickname = ''").Find(&users)
 	for _, user := range users {
-		DB.Model(&user).Update("nickname", orValue(user.Nickname, user.Username))
+		DB.Model(&user).Update("nickname", user.Username)
 	}
 	DB.Model(&models.User{}).Where("password != '' AND password_set = ?", false).
 		Update("password_set", true)

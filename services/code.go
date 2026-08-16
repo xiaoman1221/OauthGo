@@ -101,5 +101,8 @@ func ChangePassword(userID uint, newPassword string) error {
 	if err != nil {
 		return err
 	}
-	return database.DB.Model(&user).Update("password", hash).Error
+	return database.DB.Model(&user).Updates(map[string]interface{}{
+		"password":     hash,
+		"password_set": true,
+	}).Error
 }

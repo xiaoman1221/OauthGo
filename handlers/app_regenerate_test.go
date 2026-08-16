@@ -6,8 +6,8 @@ import (
 )
 
 func TestUpdateAppRegenerateKey(t *testing.T) {
-	app := seedApp(t)
-	_, token := testUser(t)
+	user, token := testUser(t)
+	app := seedOwnedApp(t, user.ID)
 
 	_, m := doAuthedJSON(t, "PUT", fmt.Sprintf("/api/apps/%d", app.ID),
 		`{"name":"测试站点","platform":"web","mode":"compat","types":["gitee"],"domains":"target.example.com","regenerate_key":true,"status":1}`,
@@ -24,8 +24,8 @@ func TestUpdateAppRegenerateKey(t *testing.T) {
 }
 
 func TestUpdateAppKeepKeyWithoutFlag(t *testing.T) {
-	app := seedApp(t)
-	_, token := testUser(t)
+	user, token := testUser(t)
+	app := seedOwnedApp(t, user.ID)
 
 	_, m := doAuthedJSON(t, "PUT", fmt.Sprintf("/api/apps/%d", app.ID),
 		`{"name":"新名称","platform":"web","mode":"compat","types":["gitee"],"domains":"target.example.com","status":1}`,

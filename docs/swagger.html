@@ -6,9 +6,22 @@
   <title>OauthGo 接口文档 - Swagger UI</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
   <style>
+    :root { --bg: #fafafa; }
+    html.dark { --bg: #0a0a0b; }
     html { box-sizing: border-box; overflow-y: scroll; }
-    body { margin: 0; background: #fafafa; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
     .topbar { display: none; }
+    /* 深色模式下对 Swagger UI 做整体反色，贴合前端深色主题 */
+    html.dark .swagger-ui {
+      filter: invert(0.92) hue-rotate(180deg);
+    }
+    html.dark .swagger-ui .model-box,
+    html.dark .swagger-ui img { filter: invert(1) hue-rotate(180deg); }
   </style>
 </head>
 <body>
@@ -23,6 +36,16 @@
   </noscript>
   <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
   <script>
+    // 与前端主题联动
+    (function () {
+      function applyTheme() {
+        var t = localStorage.getItem('theme');
+        document.documentElement.classList.toggle('dark', t === 'dark');
+      }
+      applyTheme();
+      window.addEventListener('storage', applyTheme);
+    })();
+
     window.onload = function () {
       window.ui = SwaggerUIBundle({
         url: '/docs/openapi.yaml',

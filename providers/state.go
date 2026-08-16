@@ -27,6 +27,27 @@ func GenerateState() string {
 	return state
 }
 
+// startStateJanitor 定期清理过期 state，避免未完成登录的 state 无限累积
+func startStateJanitor() {
+	go func() {
+		ticker := time.NewTicker(stateTTL)
+		defer ticker.Stop()
+		for range ticker.C {
+			stateStore.Lock()
+			for s, created := range stateStore.m {
+				if time.Since(created) > stateTTL {
+					delete(stateStore.m, s)
+				}
+			}
+			stateStore.Unlock()
+		}
+	}()
+}
+
+func init() {
+	startStateJanitor()
+}
+
 // VerifyState 校验 state 是否有效（一次性）
 func VerifyState(state string) bool {
 	if state == "" {

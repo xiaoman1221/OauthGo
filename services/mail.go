@@ -3,6 +3,7 @@ package services
 import (
 	"crypto/tls"
 	"fmt"
+	"net"
 	"net/smtp"
 	"strings"
 )
@@ -24,6 +25,7 @@ func SendMail(to, subject, body string) error {
 	password := GetSetting("smtp_password", "")
 	from := GetSetting("smtp_from", username)
 	fromName := GetSetting("smtp_from_name", "OauthGo")
+
 	useTLS := GetBoolSetting("smtp_tls", true)
 
 	if host == "" || from == "" {
@@ -42,13 +44,57 @@ func SendMail(to, subject, body string) error {
 	}, "\r\n")
 	msg := []byte(header)
 
-	// 端口 465 使用隐式 TLS，其余走 STARTTLS
-	if useTLS || port == 465 {
+	// 端口 465 固定使用隐式 TLS；其余端口按 smtp_tls 选择 STARTTLS 或明文发送
+	if port == 465 {
 		return sendMailTLS(host, addr, username, password, from, to, msg)
 	}
+	return sendMailSTARTTLSOrPlain(host, addr, username, password, from, to, msg, useTLS)
+}
 
-	auth := smtp.PlainAuth("", username, password, host)
-	return smtp.SendMail(addr, auth, from, []string{to}, msg)
+// sendMailSTARTTLSOrPlain 发送邮件：可选 STARTTLS 升级（非 465 端口）
+func sendMailSTARTTLSOrPlain(host, addr, username, password, from, to string, msg []byte, useTLS bool) error {
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	client, err := smtp.NewClient(conn, host)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	if useTLS {
+		if ok, _ := client.Extension("STARTTLS"); ok {
+			if err := client.StartTLS(&tls.Config{ServerName: host}); err != nil {
+				return err
+			}
+		}
+	}
+	if username != "" {
+		auth := smtp.PlainAuth("", username, password, host)
+		if err := client.Auth(auth); err != nil {
+			return err
+		}
+	}
+	if err := client.Mail(from); err != nil {
+		return err
+	}
+	if err := client.Rcpt(to); err != nil {
+		return err
+	}
+	w, err := client.Data()
+	if err != nil {
+		return err
+	}
+	if _, err := w.Write(msg); err != nil {
+		return err
+	}
+	if err := w.Close(); err != nil {
+		return err
+	}
+	return client.Quit()
 }
 
 func sendMailTLS(host, addr, username, password, from, to string, msg []byte) error {

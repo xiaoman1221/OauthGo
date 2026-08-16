@@ -216,11 +216,7 @@ func OAuthCallback(c *gin.Context) {
 func handleAppCallback(c *gin.Context, session services.AppSession, providerCode string) {
 	prov, ok := loadProvider(session.Provider)
 	redirectTarget := func(params map[string]string) {
-		q := "?"
-		for k, v := range params {
-			q += k + "=" + url.QueryEscape(v) + "&"
-		}
-		c.Redirect(302, session.RedirectURI+q[:len(q)-1])
+		c.Redirect(302, buildRedirectURL(session.RedirectURI, params))
 	}
 
 	if !ok {
@@ -269,11 +265,7 @@ func handleAppCallback(c *gin.Context, session services.AppSession, providerCode
 // handleBindCallback 用户中心绑定回调：获取第三方信息并绑定到当前用户后跳回前端
 func handleBindCallback(c *gin.Context, providerName string, session services.BindSession, providerCode string) {
 	redirect := func(params map[string]string) {
-		q := "?"
-		for k, v := range params {
-			q += k + "=" + url.QueryEscape(v) + "&"
-		}
-		c.Redirect(302, baseHost()+"/user-center"+q[:len(q)-1])
+		c.Redirect(302, buildRedirectURL(baseHost()+"/user-center", params))
 	}
 
 	prov, ok := loadProvider(providerName)
@@ -335,12 +327,15 @@ func bindProviderUser(providerName string, info *providers.UserInfo) (*models.Us
 			if err := database.DB.First(&user, account.UserID).Error; err != nil {
 				return nil, err
 			}
-			database.DB.Model(&account).Updates(map[string]interface{}{
-				"open_id":  info.OpenID,
+			updates := map[string]interface{}{
 				"nickname": info.Nickname,
 				"avatar":   info.Avatar,
 				"email":    info.Email,
-			})
+			}
+			if info.OpenID != "" {
+				updates["open_id"] = info.OpenID
+			}
+			database.DB.Model(&account).Updates(updates)
 			return &user, nil
 		}
 	}
@@ -352,12 +347,15 @@ func bindProviderUser(providerName string, info *providers.UserInfo) (*models.Us
 			if err := database.DB.First(&user, account.UserID).Error; err != nil {
 				return nil, err
 			}
-			database.DB.Model(&account).Updates(map[string]interface{}{
-				"union_id": info.UnionID,
+			updates := map[string]interface{}{
 				"nickname": info.Nickname,
 				"avatar":   info.Avatar,
 				"email":    info.Email,
-			})
+			}
+			if info.UnionID != "" {
+				updates["union_id"] = info.UnionID
+			}
+			database.DB.Model(&account).Updates(updates)
 			return &user, nil
 		}
 	}
@@ -588,6 +586,15 @@ func providerIDLabel(name string) string {
 	default:
 		return "ClientID"
 	}
+}
+
+// buildRedirectURL 拼接跳转地址，query 参数排序保证顺序稳定
+func buildRedirectURL(base string, params map[string]string) string {
+	q := url.Values{}
+	for k, v := range params {
+		q.Set(k, v)
+	}
+	return base + "?" + q.Encode()
 }
 
 // baseHost 返回前端站点地址（配置的 HOST）

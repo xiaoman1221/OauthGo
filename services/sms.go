@@ -146,7 +146,7 @@ func sendTencentSMS(phone, code string) error {
 	timestamp := fmt.Sprintf("%d", now.Unix())
 
 	payloadBytes, err := json.Marshal(map[string]interface{}{
-		"PhoneNumberSet":   []string{"+86" + phone},
+		"PhoneNumberSet":   []string{normalizePhone(phone)},
 		"SmsSdkAppId":      sdkAppID,
 		"SignName":         signName,
 		"TemplateId":       templateID,
@@ -230,7 +230,7 @@ func sendSMSBao(phone, content string) error {
 	api := fmt.Sprintf("http://api.smsbao.com/sms?u=%s&p=%s&m=%s&c=%s",
 		url.QueryEscape(user), md5Hex(pass), phone, url.QueryEscape(content))
 
-	resp, err := http.Get(api)
+	resp, err := httpClientSMS.Get(api)
 	if err != nil {
 		return err
 	}
@@ -246,9 +246,12 @@ func sendSMSBao(phone, content string) error {
 	return nil
 }
 
+// httpClientSMS 带超时的 HTTP 客户端（短信服务调用）
+var httpClientSMS = &http.Client{Timeout: 15 * time.Second}
+
 // postJSONForm POST 表单并解析 JSON 响应
 func postJSONForm(rawURL string, form url.Values, target interface{}) error {
-	resp, err := http.Post(rawURL, "application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
+	resp, err := httpClientSMS.Post(rawURL, "application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
 	if err != nil {
 		return err
 	}
@@ -258,6 +261,15 @@ func postJSONForm(rawURL string, form url.Values, target interface{}) error {
 		return fmt.Errorf("请求 %s 返回 %d: %s", rawURL, resp.StatusCode, truncateStr(string(body)))
 	}
 	return json.NewDecoder(resp.Body).Decode(target)
+}
+
+// normalizePhone 规整手机号：未携带国家区号时默认补 +86（腾讯云短信要求 E.164 格式）
+func normalizePhone(phone string) string {
+	phone = strings.TrimSpace(phone)
+	if strings.HasPrefix(phone, "+") {
+		return phone
+	}
+	return "+86" + phone
 }
 
 func randomHex(n int) string {

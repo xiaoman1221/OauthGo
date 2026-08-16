@@ -201,6 +201,16 @@ func BatchDeleteLoginRecords(c *gin.Context) {
 	utils.SuccessMsg(c, "批量删除成功")
 }
 
+// serveEmptyLoginCSV 导出空 CSV（无权限/无数据时使用）
+func serveEmptyLoginCSV(c *gin.Context) {
+	tmpPath := filepath.Join(os.TempDir(), "login_records.csv")
+	_ = utils.ExportLoginRecordsToCSV(tmpPath, nil)
+	defer os.Remove(tmpPath)
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", "attachment; filename=login_records.csv")
+	c.File(tmpPath)
+}
+
 // ExportLoginRecords CSV 导出登录记录
 func ExportLoginRecords(c *gin.Context) {
 	query := database.DB.Model(&models.LoginRecord{})
@@ -213,14 +223,7 @@ func ExportLoginRecords(c *gin.Context) {
 		var appIDs []uint
 		database.DB.Model(&models.App{}).Where("owner_id = ?", uid).Pluck("id", &appIDs)
 		if len(appIDs) == 0 {
-			// 导出空文件
-			var records []models.LoginRecord
-			tmpPath := filepath.Join(os.TempDir(), "login_records.csv")
-			_ = utils.ExportLoginRecordsToCSV(tmpPath, records)
-			defer os.Remove(tmpPath)
-			c.Header("Content-Type", "text/csv; charset=utf-8")
-			c.Header("Content-Disposition", "attachment; filename=login_records.csv")
-			c.File(tmpPath)
+			serveEmptyLoginCSV(c)
 			return
 		}
 		query = query.Where("app_id IN ?", appIDs)
@@ -232,14 +235,7 @@ func ExportLoginRecords(c *gin.Context) {
 			var cnt int64
 			database.DB.Model(&models.App{}).Where("id = ? AND owner_id = ?", appID, uid).Count(&cnt)
 			if cnt == 0 {
-				// 导出空文件
-				var records []models.LoginRecord
-				tmpPath := filepath.Join(os.TempDir(), "login_records.csv")
-				_ = utils.ExportLoginRecordsToCSV(tmpPath, records)
-				defer os.Remove(tmpPath)
-				c.Header("Content-Type", "text/csv; charset=utf-8")
-				c.Header("Content-Disposition", "attachment; filename=login_records.csv")
-				c.File(tmpPath)
+				serveEmptyLoginCSV(c)
 				return
 			}
 		}
@@ -263,10 +259,4 @@ func ExportLoginRecords(c *gin.Context) {
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 	c.Header("Content-Disposition", "attachment; filename=login_records.csv")
 	c.File(tmpPath)
-}
-
-// ImportLoginRecords has been removed: importing login records is disabled by policy
-func ImportLoginRecords(c *gin.Context) {
-	utils.FailForbidden(c)
-	return
 }

@@ -87,6 +87,29 @@ var appSessionStore = struct {
 	m map[string]AppSession
 }{m: map[string]AppSession{}}
 
+const appSessionTTL = 10 * time.Minute
+
+// startAppSessionJanitor 定期清理过期会话，避免未完成的登录会话无限累积
+func startAppSessionJanitor() {
+	go func() {
+		ticker := time.NewTicker(appSessionTTL)
+		defer ticker.Stop()
+		for range ticker.C {
+			appSessionStore.Lock()
+			for s, sess := range appSessionStore.m {
+				if time.Since(sess.CreatedAt) > appSessionTTL {
+					delete(appSessionStore.m, s)
+				}
+			}
+			appSessionStore.Unlock()
+		}
+	}()
+}
+
+func init() {
+	startAppSessionJanitor()
+}
+
 // CreateAppSession 创建应用登录会话并返回 state（由渠道回调带回）
 func CreateAppSession(appID, providerName, typeName, redirectURI string) string {
 	state := utils.RandomString(32)
@@ -111,7 +134,7 @@ func ResolveAppSession(state string) (AppSession, bool) {
 		return AppSession{}, false
 	}
 	delete(appSessionStore.m, state)
-	if time.Since(s.CreatedAt) > 10*time.Minute {
+	if time.Since(s.CreatedAt) > appSessionTTL {
 		return AppSession{}, false
 	}
 	return s, true
@@ -295,29 +318,4 @@ func extraString(m map[string]interface{}, key string) string {
 		return v
 	}
 	return ""
-}
-
-// EnsureAppCredentials 为既有应用补齐 AppID/AppKey（迁移用）
-func EnsureAppCredentials(appID, appKey string) (string, string) {
-	if appID == "" {
-		appID = strings.ToLower(utils.RandomString(16))
-	}
-	if appKey == "" {
-		appKey = utils.RandomString(32)
-	}
-	return appID, appKey
-}
-
-// AppModeLabel 应用模式描述
-func AppModeLabel(mode string) string {
-	switch mode {
-	case ModeRainbow:
-		return "仅彩虹协议"
-	case ModeREST:
-		return "仅REST接口"
-	case ModeCompat:
-		return "兼容模式"
-	default:
-		return mode
-	}
 }

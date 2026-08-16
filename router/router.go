@@ -47,6 +47,12 @@ func Setup() *gin.Engine {
 			oauth.POST("/:provider/callback", handlers.OAuthCallback)
 		}
 
+		// 站点公开接口（登录页背景等）
+		site := api.Group("/site")
+		{
+			site.GET("/bing-daily", handlers.BingDaily)
+		}
+
 		// 认证模块
 		auth := api.Group("/auth")
 		{
@@ -147,6 +153,7 @@ func serveFrontend(r *gin.Engine) {
 
 	r.Static("/assets", filepath.Join(dist, "assets"))
 	r.StaticFile("/favicon.ico", filepath.Join(dist, "favicon.ico"))
+	r.StaticFile("/favicon.svg", filepath.Join(dist, "favicon.svg"))
 	r.NoRoute(func(c *gin.Context) {
 		if c.Request.Method == http.MethodGet {
 			c.File(filepath.Join(dist, "index.html"))

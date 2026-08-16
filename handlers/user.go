@@ -29,11 +29,27 @@ func ListUsers(c *gin.Context) {
 	utils.Success(c, gin.H{"list": users, "total": total})
 }
 
+// CreateUserRequest 管理员创建用户请求
+type CreateUserRequest struct {
+	Username string `json:"username" binding:"required"`
+	Password string `json:"password" binding:"required"`
+	Email    string `json:"email"`
+	Phone    string `json:"phone"`
+	Role     string `json:"role"`
+}
+
 // CreateUser 创建用户（管理员）
 func CreateUser(c *gin.Context) {
-	var req RegisterRequest
+	var req CreateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.FailBadRequest(c, "参数错误："+err.Error())
+		return
+	}
+	if req.Role == "" {
+		req.Role = "user"
+	}
+	if req.Role != "admin" && req.Role != "user" {
+		utils.FailBadRequest(c, "角色不合法（admin / user）")
 		return
 	}
 
@@ -64,14 +80,14 @@ func CreateUser(c *gin.Context) {
 		return
 	}
 
-	role := c.DefaultQuery("role", "user")
 	user := models.User{
 		Username:    req.Username,
 		Nickname:    req.Username,
 		Password:    hash,
 		PasswordSet: true,
 		Email:       req.Email,
-		Role:        role,
+		Phone:       req.Phone,
+		Role:        req.Role,
 	}
 	if err := database.DB.Create(&user).Error; err != nil {
 		utils.FailInternal(c, "创建用户失败")
@@ -107,12 +123,28 @@ func UpdateUser(c *gin.Context) {
 
 	updates := map[string]interface{}{}
 	if req.Username != "" {
+		var cnt int64
+		database.DB.Model(&models.User{}).Where("username = ? AND id != ?", req.Username, user.ID).Count(&cnt)
+		if cnt > 0 {
+			utils.FailBadRequest(c, "用户名已被使用")
+			return
+		}
 		updates["username"] = req.Username
 	}
 	if req.Email != "" {
+		var cnt int64
+		database.DB.Model(&models.User{}).Where("email = ? AND id != ?", req.Email, user.ID).Count(&cnt)
+		if cnt > 0 {
+			utils.FailBadRequest(c, "邮箱已被其他账号使用")
+			return
+		}
 		updates["email"] = req.Email
 	}
 	if req.Role != "" {
+		if req.Role != "admin" && req.Role != "user" {
+			utils.FailBadRequest(c, "角色不合法（admin / user）")
+			return
+		}
 		updates["role"] = req.Role
 	}
 	if req.Password != "" {
