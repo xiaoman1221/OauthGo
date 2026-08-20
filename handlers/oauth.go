@@ -588,13 +588,24 @@ func providerIDLabel(name string) string {
 	}
 }
 
-// buildRedirectURL 拼接跳转地址，query 参数排序保证顺序稳定
+// buildRedirectURL 拼接跳转地址，query 参数排序保证顺序稳定。
+// 目标站点的 redirect_uri 可能已经携带 query 串（如 moeupcloud.com 配的
+// ?juhe=1），此时新参数应当追加在已有 query 之后并用 & 分隔，
+// 否则会把 URL 拼成两个 ?。
 func buildRedirectURL(base string, params map[string]string) string {
 	q := url.Values{}
 	for k, v := range params {
 		q.Set(k, v)
 	}
-	return base + "?" + q.Encode()
+	encoded := q.Encode()
+	if encoded == "" {
+		return base
+	}
+	sep := "?"
+	if strings.Contains(base, "?") {
+		sep = "&"
+	}
+	return base + sep + encoded
 }
 
 // baseHost 返回前端站点地址（配置的 HOST）
