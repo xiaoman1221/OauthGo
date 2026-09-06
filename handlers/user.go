@@ -183,5 +183,10 @@ func DeleteUser(c *gin.Context) {
 		utils.FailInternal(c, "删除用户失败")
 		return
 	}
+	// 级联清理该用户的第三方绑定、Passkey 与 OAuth 令牌，避免孤儿数据
+	database.DB.Where("user_id = ?", id).Delete(&models.ProviderAccount{})
+	database.DB.Where("user_id = ?", id).Delete(&models.PasskeyCredential{})
+	database.DB.Where("user_id = ?", id).Delete(&models.OAuthAccessToken{})
+	database.DB.Where("user_id = ?", id).Delete(&models.OAuthRefreshToken{})
 	utils.SuccessMsg(c, "删除成功")
 }

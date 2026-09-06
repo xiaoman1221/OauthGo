@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { providersApi } from '@/lib/api'
+import { isWebAuthnSupported, passkeyLogin } from '@/lib/passkey'
 import { useUserStore } from '@/store/user'
 
 interface PublicProvider {
@@ -34,6 +35,7 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [providers, setProviders] = useState<PublicProvider[]>([])
   const [loading, setLoading] = useState(false)
+  const [passkeyLoading, setPasskeyLoading] = useState(false)
 
   // 已登录用户直接进入控制台
   useEffect(() => {
@@ -76,6 +78,25 @@ export default function Login() {
 
   const onProvider = (p: PublicProvider) => {
     window.location.href = `/api/oauth/${p.name}/login`
+  }
+
+  const onPasskey = async () => {
+    if (!username.trim()) {
+      toast.warning('请先输入用户名 / 邮箱 / 手机号')
+      return
+    }
+    if (!isWebAuthnSupported()) {
+      toast.error('当前浏览器不支持 WebAuthn / Passkey')
+      return
+    }
+    setPasskeyLoading(true)
+    try {
+      await passkeyLogin(username.trim())
+      // passkeyLogin 内部落 token 后跳 /oauth-callback，此处无需再处理
+    } catch (err) {
+      toast.error((err as Error).message || 'Passkey 登录失败')
+      setPasskeyLoading(false)
+    }
   }
 
   return (
@@ -157,6 +178,22 @@ export default function Login() {
               {!loading && <ArrowRight className="h-4 w-4" />}
             </Button>
           </form>
+
+          <div className="flex items-center gap-4">
+            <Separator className="flex-1" />
+            <span className="text-xs text-muted-foreground">无密码登录</span>
+            <Separator className="flex-1" />
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full"
+            disabled={passkeyLoading}
+            onClick={onPasskey}
+          >
+            {passkeyLoading ? '等待安全密钥…' : '使用 Passkey / 安全密钥登录'}
+          </Button>
 
           {providers.length > 0 && (
             <>

@@ -58,6 +58,9 @@ export interface App {
   mode: string
   types: string[]
   domains: string
+  redirect_uris: string[]
+  enable_refresh: boolean
+  oidc_discovery_url: string
   status: number
   created_at: string
   updated_at: string
@@ -103,6 +106,15 @@ export interface SettingDef {
   sensitive: boolean
 }
 
+export interface PasskeyCredential {
+  id: number
+  user_id: number
+  name: string
+  credential_id: string
+  created_at: string
+  last_used_at: string | null
+}
+
 export interface Binding {
   name: string
   display_name: string
@@ -146,6 +158,8 @@ export const authApi = {
   changePassword: (data: { old_password?: string; new_password: string }) =>
     put<unknown>('/auth/password', data),
   bindings: () => get<Binding[]>('/auth/bindings'),
+  passkeys: () => get<{ list: PasskeyCredential[] }>('/auth/passkey'),
+  removePasskey: (id: number) => del<unknown>(`/auth/passkey/${id}`),
   bindLogin: (provider: string) => get<{ url: string }>(`/auth/bind/${provider}`),
   unbindLogin: (provider: string) => del<unknown>(`/auth/bind/${provider}`)
 }

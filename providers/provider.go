@@ -73,6 +73,7 @@ func All() []Meta {
 		{Name: "discord", DisplayName: "Discord", Category: "social"},
 		{Name: "facebook", DisplayName: "Facebook", Category: "social"},
 		{Name: "linkedin", DisplayName: "LinkedIn", Category: "social"},
+		{Name: "oauth2", DisplayName: "通用 OAuth2/OIDC", Category: "social"},
 	}
 }
 
@@ -127,6 +128,8 @@ func New(name string, cfg Config) (Provider, error) {
 		return &FacebookProvider{cfg: cfg, client: clientFor(cfg.UseProxy, cfg.Proxy)}, nil
 	case "linkedin":
 		return &LinkedInProvider{cfg: cfg, client: clientFor(cfg.UseProxy, cfg.Proxy)}, nil
+	case "oauth2":
+		return &OAuth2Provider{cfg: cfg, client: clientFor(cfg.UseProxy, cfg.Proxy)}, nil
 	default:
 		return nil, fmt.Errorf("不支持的登录渠道: %s", name)
 	}

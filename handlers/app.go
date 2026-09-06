@@ -21,6 +21,8 @@ type AppRequest struct {
 	Mode          string   `json:"mode"`
 	Types         []string `json:"types"`
 	Domains       string   `json:"domains"`
+	RedirectURIs  []string `json:"redirect_uris"`  // OAuth2/OIDC 回调地址白名单（精确匹配，完整 URL）
+	EnableRefresh bool     `json:"enable_refresh"` // OAuth2 是否签发 refresh_token
 	RegenerateKey bool     `json:"regenerate_key"`
 	Status        *int     `json:"status"`
 }
@@ -32,19 +34,28 @@ func appView(app *models.App) gin.H {
 	if types == nil {
 		types = []string{}
 	}
+	var redirectURIs []string
+	_ = json.Unmarshal([]byte(app.RedirectURIs), &redirectURIs)
+	if redirectURIs == nil {
+		redirectURIs = []string{}
+	}
 	return gin.H{
-		"id":         app.ID,
-		"owner_id":   app.OwnerID,
-		"name":       app.Name,
-		"platform":   app.Platform,
-		"appid":      app.AppID,
-		"app_key":    app.AppKey,
-		"mode":       app.Mode,
-		"types":      types,
-		"domains":    app.Domains,
-		"status":     app.Status,
-		"created_at": app.CreatedAt,
-		"updated_at": app.UpdatedAt,
+		"id":             app.ID,
+		"owner_id":       app.OwnerID,
+		"name":           app.Name,
+		"platform":       app.Platform,
+		"appid":          app.AppID,
+		"app_key":        app.AppKey,
+		"mode":           app.Mode,
+		"types":          types,
+		"domains":        app.Domains,
+		"redirect_uris":  redirectURIs,
+		"enable_refresh": app.EnableRefresh,
+		// OIDC Discovery URL（本平台单 issuer=HOST），供 oidc-client 等 SDK 自动发现
+		"oidc_discovery_url": services.OAuthIssuer() + "/.well-known/openid-configuration",
+		"status":             app.Status,
+		"created_at":         app.CreatedAt,
+		"updated_at":         app.UpdatedAt,
 	}
 }
 
@@ -56,8 +67,14 @@ func validateAppReq(req *AppRequest) string {
 	if req.Mode == "" {
 		req.Mode = services.ModeCompat
 	}
-	if req.Mode != services.ModeRainbow && req.Mode != services.ModeREST && req.Mode != services.ModeCompat {
-		return "模式不合法（rainbow / rest / compat）"
+	if req.Mode != services.ModeRainbow && req.Mode != services.ModeREST &&
+		req.Mode != services.ModeOAuth2 && req.Mode != services.ModeCompat {
+		return "模式不合法（rainbow / rest / oauth2 / compat）"
+	}
+	for _, u := range req.RedirectURIs {
+		if !isHTTPURL(u) {
+			return "OAuth2 回调地址必须是合法的 http(s) URL: " + u
+		}
 	}
 	for _, t := range req.Types {
 		if _, ok := providers.FindMeta(t); !ok {
@@ -79,6 +96,14 @@ func typesToJSON(types []string) string {
 		types = []string{}
 	}
 	b, _ := json.Marshal(types)
+	return string(b)
+}
+
+func redirectURIsToJSON(list []string) string {
+	if list == nil {
+		list = []string{}
+	}
+	b, _ := json.Marshal(list)
 	return string(b)
 }
 
@@ -169,15 +194,17 @@ func CreateApp(c *gin.Context) {
 	}
 
 	app := models.App{
-		OwnerID:  uid,
-		Name:     strings.TrimSpace(req.Name),
-		Platform: req.Platform,
-		AppID:    strings.ToLower(utils.RandomString(16)),
-		AppKey:   utils.RandomString(32),
-		Mode:     req.Mode,
-		Types:    typesToJSON(req.Types),
-		Domains:  req.Domains,
-		Status:   1,
+		OwnerID:       uid,
+		Name:          strings.TrimSpace(req.Name),
+		Platform:      req.Platform,
+		AppID:         strings.ToLower(utils.RandomString(16)),
+		AppKey:        utils.RandomString(32),
+		Mode:          req.Mode,
+		Types:         typesToJSON(req.Types),
+		Domains:       req.Domains,
+		RedirectURIs:  redirectURIsToJSON(req.RedirectURIs),
+		EnableRefresh: req.EnableRefresh,
+		Status:        1,
 	}
 	if req.Status != nil {
 		app.Status = *req.Status
@@ -233,11 +260,13 @@ func UpdateApp(c *gin.Context) {
 	}
 
 	updates := map[string]interface{}{
-		"name":     strings.TrimSpace(req.Name),
-		"platform": req.Platform,
-		"mode":     req.Mode,
-		"types":    typesToJSON(req.Types),
-		"domains":  req.Domains,
+		"name":           strings.TrimSpace(req.Name),
+		"platform":       req.Platform,
+		"mode":           req.Mode,
+		"types":          typesToJSON(req.Types),
+		"domains":        req.Domains,
+		"redirect_uris":  redirectURIsToJSON(req.RedirectURIs),
+		"enable_refresh": req.EnableRefresh,
 	}
 	if req.RegenerateKey {
 		updates["app_key"] = utils.RandomString(32)
@@ -282,5 +311,9 @@ func DeleteApp(c *gin.Context) {
 		utils.FailInternal(c, "删除应用失败")
 		return
 	}
+	// 级联清理该应用在 OAuth2/OIDC 流程中的授权码与令牌，防止孤儿数据与残留访问能力
+	database.DB.Where("client_id = ?", app.AppID).Delete(&models.OAuthCode{})
+	database.DB.Where("client_id = ?", app.AppID).Delete(&models.OAuthAccessToken{})
+	database.DB.Where("client_id = ?", app.AppID).Delete(&models.OAuthRefreshToken{})
 	utils.SuccessMsg(c, "删除成功")
 }

@@ -18,6 +18,143 @@ tags:
   - name: REST 接口
     description: 自研 REST 风格接口，统一返回 {code, message, data}
 paths:
+  /api/oauth2/authorize:
+    get:
+      tags:
+        - OAuth2 / OIDC 授权服务器
+      operationId: oauth2Authorize
+      summary: 授权端点（authorization code flow，支持 PKCE）
+      description: |
+        目标站点作为 OAuth2/OIDC 客户端跳转本端点发起授权。凭证：appid=client_id、appkey=client_secret。
+        可选 type 参数指定登录渠道（provider name，如 wechat/gitee/qq/oauth2），不带则返回渠道选择授权页。
+      parameters:
+        - name: response_type
+          in: query
+          required: true
+          schema: { type: string, enum: [code] }
+        - name: client_id
+          in: query
+          required: true
+          schema: { type: string }
+          description: 应用 AppID
+        - name: redirect_uri
+          in: query
+          required: true
+          schema: { type: string, format: uri }
+          description: 应用配置的 OAuth2 回调地址（精确匹配）
+        - name: scope
+          in: query
+          required: false
+          schema: { type: string }
+          description: 空格分隔（如 openid profile email offline_access）
+        - name: state
+          in: query
+          required: true
+          schema: { type: string }
+        - name: nonce
+          in: query
+          required: false
+          schema: { type: string }
+        - name: code_challenge
+          in: query
+          required: false
+          schema: { type: string }
+        - name: code_challenge_method
+          in: query
+          required: false
+          schema: { type: string, enum: [S256, plain] }
+        - name: type
+          in: query
+          required: false
+          schema: { type: string }
+          description: 登录渠道（provider name），缺省显示授权选择页
+      responses:
+        '302':
+          description: 成功或错误均以 302 回跳 redirect_uri（携带 code+state 或 error）
+        '400':
+          description: 客户端/redirect_uri 非法（错误页）
+  /api/oauth2/token:
+    post:
+      tags:
+        - OAuth2 / OIDC 授权服务器
+      operationId: oauth2Token
+      summary: 令牌端点（authorization_code / refresh_token）
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                grant_type: { type: string, enum: [authorization_code, refresh_token] }
+                code: { type: string }
+                code_verifier: { type: string }
+                refresh_token: { type: string }
+                redirect_uri: { type: string }
+                client_id: { type: string }
+                client_secret: { type: string }
+      responses:
+        '200':
+          description: 成功返回 access_token / refresh_token / id_token
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OAuthTokenResponse' }
+        '400':
+          description: 无效授权码 / PKCE 校验失败
+        '401':
+          description: 客户端认证失败
+  /api/oauth2/userinfo:
+    get:
+      tags:
+        - OAuth2 / OIDC 授权服务器
+      operationId: oauth2Userinfo
+      summary: 用户信息端点（Bearer access_token）
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 标准 OIDC claims + 绑定的第三方 accounts
+        '401':
+          description: 令牌无效或过期
+  /api/oauth2/jwks:
+    get:
+      tags:
+        - OAuth2 / OIDC 授权服务器
+      operationId: oauth2JWKS
+      summary: id_token 验签公钥（RS256）
+      responses:
+        '200':
+          description: JWK Set（kid=oauthgo-rsa-1）
+  /api/oauth2/revoke:
+    post:
+      tags:
+        - OAuth2 / OIDC 授权服务器
+      operationId: oauth2Revoke
+      summary: 撤销令牌（RFC 7009）
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                token: { type: string }
+                token_type_hint: { type: string }
+      responses:
+        '200':
+          description: 撤销完成
+  /api/oauth2/.well-known/openid-configuration:
+    get:
+      tags:
+        - OAuth2 / OIDC 授权服务器
+      operationId: oauth2Discovery
+      summary: OIDC Discovery 文档
+      responses:
+        '200':
+          description: 发现文档（issuer/authorization_endpoint/token_endpoint/userinfo_endpoint/jwks_uri）
   /connect.php:
     get:
       tags:
@@ -376,8 +513,191 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/ProviderInfo'
+  /authorize:
+    get:
+      tags:
+        - OAuth2 / OIDC 授权服务器（官方根路径）
+      operationId: oauth2AuthorizeRoot
+      summary: 授权端点（官方路径，issuer 根下；/api/oauth2/authorize 为兼容别名）
+      description: |
+        OIDC Discovery 发布的 authorization_endpoint。支持 PKCE、state/nonce；
+        带 type 参数直跳渠道授权，不带则返回渠道选择页。
+      parameters:
+        - name: response_type
+          in: query
+          required: true
+          schema: { type: string, enum: [code] }
+        - name: client_id
+          in: query
+          required: true
+          schema: { type: string }
+        - name: redirect_uri
+          in: query
+          required: true
+          schema: { type: string, format: uri }
+        - name: scope
+          in: query
+          required: false
+          schema: { type: string }
+        - name: state
+          in: query
+          required: true
+          schema: { type: string }
+        - name: nonce
+          in: query
+          required: false
+          schema: { type: string }
+        - name: code_challenge
+          in: query
+          required: false
+          schema: { type: string }
+        - name: code_challenge_method
+          in: query
+          required: false
+          schema: { type: string, enum: [S256, plain] }
+        - name: prompt
+          in: query
+          required: false
+          schema: { type: string }
+        - name: response_mode
+          in: query
+          required: false
+          schema: { type: string, enum: [query] }
+      responses:
+        '302':
+          description: 回跳 redirect_uri（code+state 或 OAuth2 标准错误参数）
+        '400':
+          description: client / redirect_uri 非法
+  /token:
+    post:
+      tags:
+        - OAuth2 / OIDC 授权服务器（官方根路径）
+      operationId: oauth2TokenRoot
+      summary: 令牌端点（官方路径；/api/oauth2/token 为兼容别名）
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                grant_type: { type: string, enum: [authorization_code, refresh_token] }
+                code: { type: string }
+                code_verifier: { type: string }
+                refresh_token: { type: string }
+                redirect_uri: { type: string }
+      security:
+        - oauth2ClientAuth: []
+      responses:
+        '200':
+          description: access_token / refresh_token / id_token
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OAuthTokenResponse' }
+        '400': { description: invalid_grant / PKCE 失败 }
+        '401': { description: invalid_client }
+  /userinfo:
+    get:
+      tags:
+        - OAuth2 / OIDC 授权服务器（官方根路径）
+      operationId: oauth2UserinfoRoot
+      summary: 用户信息端点（官方路径；/api/oauth2/userinfo 为兼容别名）
+      description: 按授权 scope 过滤 claims（openid→sub、profile、email、phone）
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OIDC claims
+        '401': { description: invalid_token }
+  /jwks:
+    get:
+      tags:
+        - OAuth2 / OIDC 授权服务器（官方根路径）
+      operationId: oauth2JWKSRoot
+      summary: id_token 验签公钥（官方路径；/api/oauth2/jwks 为兼容别名）
+      responses:
+        '200':
+          description: JWK Set
+  /revoke:
+    post:
+      tags:
+        - OAuth2 / OIDC 授权服务器（官方根路径）
+      operationId: oauth2RevokeRoot
+      summary: 撤销令牌 RFC 7009（官方路径）
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                token: { type: string }
+                token_type_hint: { type: string }
+      responses:
+        '200': { description: 撤销完成 }
+  /introspect:
+    post:
+      tags:
+        - OAuth2 / OIDC 授权服务器（官方根路径）
+      operationId: oauth2Introspect
+      summary: 令牌内省 RFC 7662
+      description: 受保护资源方用 client 凭据校验 access_token / refresh_token
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                token: { type: string }
+                token_type_hint: { type: string }
+      security:
+        - oauth2ClientAuth: []
+      responses:
+        '200':
+          description: active=true/false 与令牌元数据
+        '401': { description: invalid_client }
+  /.well-known/openid-configuration:
+    get:
+      tags:
+        - OAuth2 / OIDC 授权服务器（官方根路径）
+      operationId: oauth2DiscoveryRoot
+      summary: OIDC Discovery（RFC 8414，issuer 根路径；/api/oauth2/.well-known/openid-configuration 为别名）
+      responses:
+        '200':
+          description: 发现文档
+  /.well-known/oauth-authorization-server:
+    get:
+      tags:
+        - OAuth2 / OIDC 授权服务器（官方根路径）
+      operationId: oauth2DiscoveryOAuthServer
+      summary: OAuth2 Authorization Server Metadata（RFC 8414）
+      responses:
+        '200':
+          description: 发现文档
+
+components:
+  securitySchemes:
+    oauth2ClientAuth:
+      type: http
+      scheme: basic
+      description: HTTP Basic（client_id/client_secret）或表单 client_id+client_secret
+  schemas:
 components:
   schemas:
+    OAuthTokenResponse:
+      type: object
+      description: OAuth2/OIDC 令牌响应
+      properties:
+        access_token: { type: string }
+        token_type: { type: string, example: Bearer }
+        expires_in: { type: integer }
+        refresh_token: { type: string }
+        scope: { type: string }
+        id_token: { type: string, description: scope 含 openid 时签发（RS256） }
     RainbowResponse:
       type: object
       description: 彩虹协议统一响应

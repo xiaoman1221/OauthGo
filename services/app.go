@@ -1,6 +1,7 @@
 package services
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"net/url"
@@ -19,6 +20,7 @@ import (
 const (
 	ModeRainbow = "rainbow" // 仅彩虹聚合登录协议
 	ModeREST    = "rest"    // 仅 REST 风格接口
+	ModeOAuth2  = "oauth2"  // 仅标准 OAuth2 / OIDC 授权服务器协议
 	ModeCompat  = "compat"  // 兼容（两种接口均支持）
 )
 
@@ -50,7 +52,7 @@ func ResolveType(typeName, mode string) (providerName string, ok bool) {
 	if typeName == "" {
 		return "", false
 	}
-	if mode == ModeREST {
+	if mode == ModeREST || mode == ModeOAuth2 {
 		_, ok := providers.FindMeta(typeName)
 		return typeName, ok
 	}
@@ -226,7 +228,9 @@ func VerifySign(params map[string]string, appKey, sign string) bool {
 	if sign == "" || appKey == "" {
 		return false
 	}
-	return sign == ComputeSign(params, appKey)
+	expect := ComputeSign(params, appKey)
+	// 恒定时间比较，避免基于时长的签名猜测
+	return subtle.ConstantTimeCompare([]byte(sign), []byte(expect)) == 1
 }
 
 // ComputeSign 计算签名
@@ -288,7 +292,14 @@ func ExchangeCode(appID, code string) (*models.LoginCode, error) {
 	if time.Now().After(record.ExpiresAt) {
 		return nil, errors.New("code 已过期")
 	}
-	database.DB.Model(&record).Update("used", true)
+	// 原子占用，防止并发把同一 code 兑换两次
+	occupy := database.DB.Model(&models.LoginCode{}).Where("id = ? AND used = ?", record.ID, false).Update("used", true)
+	if occupy.Error != nil {
+		return nil, errors.New("code 状态更新失败")
+	}
+	if occupy.RowsAffected == 0 {
+		return nil, errors.New("code 已使用")
+	}
 	return &record, nil
 }
 
@@ -302,9 +313,13 @@ func QueryUserBySocialUID(appID, typeName, socialUID string) (*models.LoginRecor
 		return nil, errors.New("应用不存在")
 	}
 
+	q := database.DB.Where("app_id = ? AND open_id = ?", app.ID, socialUID)
+	// 彩虹协议 act=query 携带 type（登录类型），按其精确过滤，避免不同渠道 openid 撞库串号
+	if typeName != "" {
+		q = q.Where("platform = ?", typeName)
+	}
 	var record models.LoginRecord
-	if err := database.DB.Where("app_id = ? AND open_id = ?", app.ID, socialUID).
-		Order("id desc").First(&record).Error; err != nil {
+	if err := q.Order("id desc").First(&record).Error; err != nil {
 		return nil, errors.New("未查询到用户登录记录")
 	}
 	return &record, nil

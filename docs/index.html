@@ -158,6 +158,7 @@
 <div class="tabs">
   <button class="tab active" data-tab="rainbow">彩虹聚合登录协议</button>
   <button class="tab" data-tab="rest">REST 风格接口</button>
+  <button class="tab" data-tab="oauth2">OAuth2 / OIDC 接入</button>
 </div>
 
 <div class="container">
@@ -336,6 +337,91 @@ sign = md5(原串)
       </tbody>
     </table>
   </div>
+
+  <!-- ===================== OAuth2 / OIDC 授权服务器协议 ===================== -->
+  <div class="panel" id="oauth2">
+    <h2>标准 OAuth2 / OIDC 授权服务器</h2>
+    <div class="alert">
+      本平台同时可作为标准的 <b>OAuth2 / OIDC 授权服务器</b>（authorization code flow），
+      供任意 OIDC / OAuth2 客户端接入（如使用 <code>oidc-client</code>、Keycloak、Auth0 等生态）。
+      应用凭证：<code>appid</code> = <code>client_id</code>，<code>appkey</code> = <code>client_secret</code>。
+      在「应用管理」中把模式设为 <code>oauth2 / compat</code> 并配置「OAuth2/OIDC 回调地址」（精确匹配，每行一个）。
+    </div>
+
+    <h2>端点一览</h2>
+    <table>
+      <thead><tr><th>端点</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>GET/POST /authorize</td><td>授权端点（response_type=code，支持 PKCE；OIDC Discovery 发布地址）</td></tr>
+        <tr><td>POST /token</td><td>令牌端点（authorization_code / refresh_token）</td></tr>
+        <tr><td>GET/POST /userinfo</td><td>受保护资源：Bearer access_token 换取用户信息（按 scope 过滤 claims）</td></tr>
+        <tr><td>GET /jwks</td><td>id_token（RS256）验签公钥（kid=oauthgo-rsa-1）</td></tr>
+        <tr><td>POST /revoke</td><td>撤销 refresh_token / access_token（RFC 7009）</td></tr>
+        <tr><td>POST /introspect</td><td>令牌内省（RFC 7662），保护资源方用 client 凭据校验令牌</td></tr>
+        <tr><td>GET /.well-known/openid-configuration</td><td>OIDC Discovery（位于 issuer 根路径，主流 SDK 自动发现）</td></tr>
+        <tr><td>GET /.well-known/oauth-authorization-server</td><td>OAuth2 Authorization Server Metadata（RFC 8414）</td></tr>
+      </tbody>
+    </table>
+
+    <h2>接入流程</h2>
+    <div class="flow">
+      <div class="step"><div class="num">1</div><div class="txt">目标站点跳转 <code>/api/oauth2/authorize</code>，携带 <code>client_id/appid</code>、<code>redirect_uri</code>、<code>state</code>，可选 <code>scope</code>、PKCE <code>code_challenge</code>。</div></div>
+      <div class="step"><div class="num">2</div><div class="txt">未指定 <code>type</code> 时平台返回「选择登录渠道」授权页；带 <code>type=gitee</code> 等渠道名时直接跳转第三方授权。</div></div>
+      <div class="step"><div class="num">3</div><div class="txt">用户在渠道完成授权后，平台 302 跳回 <code>redirect_uri?code=...&amp;state=...</code>。</div></div>
+      <div class="step"><div class="num">4</div><div class="txt">目标站点在服务端用 <code>code</code> + <code>client_secret/appkey</code> 调 <code>/token</code> 换取 access_token / refresh_token / id_token，再调 <code>/userinfo</code> 获取用户信息。</div></div>
+    </div>
+
+    <p>端点全部发布在 <b>issuer（本站 HOST）根路径</b> 下，与 OIDC Discovery 规范一致；旧前缀 <code>/api/oauth2/*</code> 仍作为兼容别名可用。</p>
+
+    <h2>平台账号登录（IDP / CAS）</h2>
+    <p>未指定 <code>type</code> 的授权页提供<b>「使用 OauthGo 账号」</b>登录：支持账号密码与 <b>Passkey / WebAuthn</b> 无密码登录。登录成功后平台直接为该账号签发授权码回跳目标站点，实现以平台账号为身份源的单点登录（SSO）。</p>
+
+    <h2>1. 发起授权</h2>
+    <p>应用须先配置「OAuth2/OIDC 回调地址」（完整 URL，精确匹配）。<code>type</code> 可选：渠道名（provider name，如 <code>wechat</code> / <code>gitee</code> / <code>qq</code> / <code>oauth2</code>）。</p>
+    <pre><code>https://your-host/authorize?response_type=code&amp;client_id=10001&amp;redirect_uri=https%3A%2F%2Fexample.com%2Foauth%2Fcallback&amp;scope=openid%20profile&amp;state=abc123
+</code><button class="copy-btn" onclick="copy(this)">复制</button></pre>
+
+    <h2>2. 授权成功回跳</h2>
+    <pre><code>https://example.com/oauth/callback?code=xxxx&amp;state=abc123
+</code><button class="copy-btn" onclick="copy(this)">复制</button></pre>
+
+    <h2>3. 换取令牌</h2>
+    <p>客户端认证支持表单（client_id + client_secret）或 HTTP Basic；请求 <code>offline_access</code> scope 或应用开启「签发刷新令牌」时返回 refresh_token。</p>
+    <pre><code>curl -X POST https://your-host/token \
+  -d "grant_type=authorization_code" \
+  -d "code=xxxx" \
+  -d "client_id=10001" \
+  -d "client_secret=your_appkey" \
+  -d "redirect_uri=https://example.com/oauth/callback"
+</code><button class="copy-btn" onclick="copy(this)">复制</button></pre>
+    <pre><code>{ "access_token": "xxxx", "token_type": "Bearer", "expires_in": 7200,
+  "refresh_token": "xxxx", "scope": "openid profile",
+  "id_token": "eyJhbGciOiJSUzI1NiIsImtpZCI6Im9hdXRobmctcnNhLTEifQ.xxx.yyy" }
+</code><button class="copy-btn" onclick="copy(this)">复制</button></pre>
+
+    <h2>4. 获取用户信息</h2>
+    <pre><code>curl https://your-host/userinfo -H "Authorization: Bearer ACCESS_TOKEN"
+</code><button class="copy-btn" onclick="copy(this)">复制</button></pre>
+    <pre><code>{ "sub": "12", "name": "张三", "preferred_username": "zhangsan",
+  "picture": "https://avatar.example.com/1.png", "email": "zhangsan@example.com",
+  "scope": "openid profile",
+  "accounts": [ { "provider": "wechat", "openid": "oXXXX", "unionid": "uXXXX", "nickname": "张三" } ] }
+</code><button class="copy-btn" onclick="copy(this)">复制</button></pre>
+    <p><code>sub</code> 为该平台稳定用户标识；<code>accounts</code> 列出其绑定的第三方账号（聚合场景可直接取 <code>openid / unionid</code>）。</p>
+
+    <h2>安全特性</h2>
+    <table>
+      <thead><tr><th>能力</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>PKCE</td><td>authorize 支持 <code>code_challenge</code> + <code>code_challenge_method=S256|plain</code>，token 时以 <code>code_verifier</code> 校验</td></tr>
+        <tr><td>id_token</td><td>scope 含 <code>openid</code> 时签发 RS256 JWT，验签公钥见 <code>/jwks</code>（kid=oauthgo-rsa-1）</td></tr>
+        <tr><td>refresh_token</td><td>轮换制，旧令牌立即失效；支持 <code>/api/oauth2/revoke</code> 主动撤销</td></tr>
+        <tr><td>state / nonce</td><td>授权码回跳原样带回，防 CSRF；id_token 支持 nonce 校验</td></tr>
+        <tr><td>一次性授权码</td><td>授权码有效期 10 分钟，仅可交换一次</td></tr>
+      </tbody>
+    </table>
+  </div>
+
 
 </div>
 

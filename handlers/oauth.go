@@ -176,16 +176,30 @@ func OAuthCallback(c *gin.Context) {
 
 	// 优先处理目标站点登录会话（彩虹 / REST 协议）
 	if session, ok := services.ResolveAppSession(state); ok {
+		// 回调渠道必须与会话发起的渠道一致，防止把授权码提交到错误渠道端点
+		if session.Provider != name {
+			utils.FailBadRequest(c, "回调渠道与发起登录渠道不一致")
+			return
+		}
 		handleAppCallback(c, session, code)
 		return
 	}
 
 	// 处理「用户中心」绑定会话
 	if session, ok := services.ResolveBindSession(state); ok {
+		if session.Provider != name {
+			utils.FailBadRequest(c, "回调渠道与发起绑定渠道不一致")
+			return
+		}
 		handleBindCallback(c, name, session, code)
 		return
 	}
 
+	// 处理标准 OAuth2 / OIDC 授权会话（/api/oauth2/authorize 发起）
+	if ctx, ok := services.ResolveOAuthCtx(state); ok {
+		handleOAuthCallback(c, ctx, name, code)
+		return
+	}
 	if !providers.VerifyState(state) {
 		utils.FailBadRequest(c, "state 校验失败，请重新发起登录")
 		return
@@ -542,6 +556,15 @@ func TestProvider(c *gin.Context) {
 		return
 	}
 
+	// 通用 OAuth2/OIDC 渠道：校验端点配置并实际触发一次 discovery 拉取
+	if name == providers.OAuth2ChannelName {
+		if v, ok := prov.(interface{ Validate() error }); ok {
+			if err := v.Validate(); err != nil {
+				utils.FailBadRequest(c, "渠道配置错误："+err.Error())
+				return
+			}
+		}
+	}
 	authURL := prov.GetAuthURL(providers.GenerateState())
 	if authURL == "" {
 		utils.Success(c, gin.H{"message": "配置有效（该渠道无需网页跳转，前端直接传 code 登录）"})
@@ -582,6 +605,8 @@ func providerIDLabel(name string) string {
 	case "facebook":
 		return "App ID"
 	case "linkedin":
+		return "Client ID"
+	case "oauth2":
 		return "Client ID"
 	default:
 		return "ClientID"

@@ -14,6 +14,16 @@ import (
 
 // GenerateVerifyCode 生成验证码并通过对应渠道发送
 func GenerateVerifyCode(scope, account string) error {
+	// 限频：同一 scope+account 在冷却期内不得重复发送，防止短信/邮件滥用
+	var last models.VerificationCode
+	if err := database.DB.Where("scope = ? AND account = ? AND used = ?", scope, account, false).
+		Order("id desc").First(&last).Error; err == nil && time.Since(last.CreatedAt) < 60*time.Second {
+		return fmt.Errorf("请求过于频繁，请稍后再试")
+	}
+	// 作废该账号此前未使用的验证码，避免旧码堆积
+	database.DB.Where("scope = ? AND account = ? AND used = ?", scope, account, false).
+		Update("used", true)
+
 	length := GetIntSetting("code_length", 6)
 	if length <= 0 || length > 16 {
 		length = 6
@@ -56,19 +66,23 @@ func VerifyVerifyCode(scope, account, code string) error {
 	}
 
 	var record models.VerificationCode
-	err := database.DB.Where("scope = ? AND account = ? AND code = ?", scope, account, code).
+	err := database.DB.Where("scope = ? AND account = ? AND code = ? AND used = ?", scope, account, code, false).
 		Order("id desc").First(&record).Error
 	if err != nil {
-		return fmt.Errorf("验证码错误")
-	}
-	if record.Used {
-		return fmt.Errorf("验证码已使用")
+		return fmt.Errorf("验证码错误或已使用")
 	}
 	if time.Now().After(record.ExpiresAt) {
 		return fmt.Errorf("验证码已过期")
 	}
 
-	database.DB.Model(&record).Update("used", true)
+	// 原子占用，防止并发使用同一验证码
+	occupy := database.DB.Model(&models.VerificationCode{}).Where("id = ? AND used = ?", record.ID, false).Update("used", true)
+	if occupy.Error != nil {
+		return fmt.Errorf("验证码校验失败")
+	}
+	if occupy.RowsAffected == 0 {
+		return fmt.Errorf("验证码已使用")
+	}
 	return nil
 }
 

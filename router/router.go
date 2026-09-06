@@ -1,10 +1,14 @@
 package router
 
 import (
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
+	"OauthGo/config"
 	"OauthGo/handlers"
 	"OauthGo/middleware"
 
@@ -13,7 +17,28 @@ import (
 
 // Setup 初始化路由
 func Setup() *gin.Engine {
-	r := gin.Default()
+	gin.SetMode(config.AppConfig.GinMode)
+	// 自建 engine：日志中间件不打印 URL 查询串，避免 appid/appkey/sign/密码等敏感参数进入日志
+	r := gin.New()
+	r.Use(gin.Recovery())
+	r.Use(securityHeaders())
+	r.Use(requestLogger())
+
+	// 默认不信任任何代理（禁止伪造 X-Forwarded-For 污染 c.ClientIP 审计）。
+	// 部署在反向代理后时，通过环境变量 TRUSTED_PROXIES 配置可信代理 CIDR（逗号分隔）。
+	if raw := strings.TrimSpace(config.AppConfig.TrustedProxies); raw != "" {
+		proxies := make([]string, 0)
+		for _, p := range strings.Split(raw, ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				proxies = append(proxies, p)
+			}
+		}
+		if err := r.SetTrustedProxies(proxies); err != nil {
+			log.Printf("[WARN] TRUSTED_PROXIES 配置无效: %v", err)
+		}
+	} else {
+		_ = r.SetTrustedProxies(nil)
+	}
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
@@ -27,6 +52,22 @@ func Setup() *gin.Engine {
 		r.POST("/connect.php", handlers.RainbowConnect)
 		api.GET("/connect.php", handlers.RainbowConnect)
 		api.POST("/connect.php", handlers.RainbowConnect)
+
+		// 标准 OAuth2 / OIDC 授权服务器接口（authorization code flow）
+		oauth2 := api.Group("/oauth2")
+		{
+			oauth2.GET("/authorize", handlers.AuthorizeOAuth2)
+			oauth2.POST("/authorize", handlers.AuthorizeOAuth2)
+			oauth2.POST("/token", handlers.TokenOAuth2)
+			oauth2.GET("/userinfo", handlers.OAuth2Userinfo)
+			oauth2.POST("/userinfo", handlers.OAuth2Userinfo)
+			oauth2.GET("/jwks", handlers.OAuth2JWKS)
+			oauth2.POST("/revoke", handlers.OAuth2Revoke)
+			oauth2.POST("/introspect", handlers.OAuth2Introspect)
+			oauth2.POST("/platform-login", handlers.OAuth2PlatformLogin)
+			oauth2.GET("/.well-known/openid-configuration", handlers.OAuth2Discovery)
+			oauth2.GET("/.well-known/oauth-authorization-server", handlers.OAuth2Discovery)
+		}
 
 		// REST 风格聚合登录接口
 		v1 := api.Group("/v1/oauth")
@@ -62,6 +103,18 @@ func Setup() *gin.Engine {
 			auth.POST("/send-code", handlers.SendCode)
 			auth.POST("/forgot", handlers.ForgotPassword)
 			auth.GET("/me", middleware.JWT(), handlers.Me)
+
+			// Passkey / WebAuthn
+			passkey := auth.Group("/passkey")
+			{
+				passkey.POST("/register/begin", middleware.JWT(), handlers.PasskeyRegisterBegin)
+				passkey.POST("/register/finish", middleware.JWT(), handlers.PasskeyRegisterFinish)
+				passkey.GET("/login/begin", handlers.PasskeyLoginBegin)
+				passkey.POST("/login/begin", handlers.PasskeyLoginBegin)
+				passkey.POST("/login/finish", handlers.PasskeyLoginFinish)
+				passkey.GET("", middleware.JWT(), handlers.PasskeyList)
+				passkey.DELETE("/:id", middleware.JWT(), handlers.PasskeyDelete)
+			}
 
 			// 用户中心
 			auth.GET("/bindings", middleware.JWT(), handlers.MyBindings)
@@ -130,6 +183,22 @@ func Setup() *gin.Engine {
 		}
 	}
 
+	// 标准 OAuth2 / OIDC 授权服务器端点（与 issuer=HOST 对齐的官方路径）
+	// RFC 6749 / OIDC Core / RFC 8414：Discovery 文档位于 {issuer}/.well-known/openid-configuration
+	oauth2Root := r.Group("")
+	{
+		oauth2Root.GET("/authorize", handlers.AuthorizeOAuth2)
+		oauth2Root.POST("/authorize", handlers.AuthorizeOAuth2)
+		oauth2Root.POST("/token", handlers.TokenOAuth2)
+		oauth2Root.GET("/userinfo", handlers.OAuth2Userinfo)
+		oauth2Root.POST("/userinfo", handlers.OAuth2Userinfo)
+		oauth2Root.GET("/jwks", handlers.OAuth2JWKS)
+		oauth2Root.POST("/revoke", handlers.OAuth2Revoke)
+		oauth2Root.POST("/introspect", handlers.OAuth2Introspect)
+		oauth2Root.GET("/.well-known/openid-configuration", handlers.OAuth2Discovery)
+		oauth2Root.GET("/.well-known/oauth-authorization-server", handlers.OAuth2Discovery)
+	}
+
 	// 接口文档与 OpenAPI
 	docs := r.Group("/docs")
 	{
@@ -142,6 +211,25 @@ func Setup() *gin.Engine {
 	serveFrontend(r)
 
 	return r
+}
+
+// securityHeaders 基础安全响应头：防嗅探 / 防点击劫持 iframe / 收紧 referrer
+func securityHeaders() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("X-Frame-Options", "DENY")
+		c.Header("Referrer-Policy", "no-referrer")
+		c.Next()
+	}
+}
+
+// requestLogger 脱敏请求日志：仅记录方法/路径/状态/耗时/客户端 IP，不记录 query 与表单
+func requestLogger() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+		c.Next()
+		log.Printf("%s %s %s %d %s", c.ClientIP(), c.Request.Method, c.Request.URL.Path, c.Writer.Status(), time.Since(start))
+	}
 }
 
 // serveFrontend 提供前端静态资源（构建产物位于 web/dist）

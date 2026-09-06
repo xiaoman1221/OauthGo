@@ -9,11 +9,12 @@ import (
 
 // Config 全局配置
 type Config struct {
-	Port    string
-	GinMode string
-	DBPath  string
-	JWTKey  string
-	Host    string
+	Port           string
+	GinMode        string
+	DBPath         string
+	JWTKey         string
+	Host           string
+	TrustedProxies string // 可信代理 CIDR（逗号分隔），空则完全禁用 X-Forwarded-For 信任
 }
 
 // AppConfig 应用配置实例
@@ -24,11 +25,12 @@ func Load() {
 	_ = godotenv.Load()
 
 	AppConfig = Config{
-		Host:    os.Getenv("HOST"),
-		Port:    getEnv("PORT", "8080"),
-		GinMode: getEnv("GIN_MODE", "debug"),
-		DBPath:  getEnv("DB_PATH", "data.db"),
-		JWTKey:  getEnv("JWT_KEY", ""),
+		Host:           os.Getenv("HOST"),
+		TrustedProxies: os.Getenv("TRUSTED_PROXIES"),
+		Port:           getEnv("PORT", "8080"),
+		GinMode:        getEnv("GIN_MODE", "debug"),
+		DBPath:         getEnv("DB_PATH", "data.db"),
+		JWTKey:         getEnv("JWT_KEY", ""),
 	}
 
 	if AppConfig.JWTKey == "" {

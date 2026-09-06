@@ -4,12 +4,13 @@
 
 ## 功能特性
 
-- **第三方登录聚合** - 对标彩虹聚合登录，为其他站点提供第三方登录服务，兼容彩虹协议与自研 REST 接口
+- **第三方登录聚合** - 对标彩虹聚合登录，为其他站点提供第三方登录服务，兼容彩虹协议、自研 REST 接口与标准 OAuth2/OIDC 授权服务器协议（authorization code + PKCE + RS256 id_token + Discovery/JWKS）
 - **应用管理** - 目标站点注册应用，自动生成 AppID/AppKey，配置支持登录类型（QQ/微信/支付宝/微博/百度/抖音/钉钉/Gitee/企业微信等）与回调域名白名单（区分子域名）
 - **登录管理** - 登录记录的增删改查、批量操作、CSV导入导出
 - **到期通知** - 多渠道域名到期提醒（邮件、Webhook等）
 - **用户系统** - 多用户支持、角色权限管理
 - **用户中心** - 个人资料（昵称/头像/用户名/邮箱/手机号）修改、修改密码、绑定/解绑第三方登录
+- **Passkey / WebAuthn** - 无密码登录与通行密钥管理（登录页 Passkey 登录、用户中心注册/删除），并可作为 OIDC 授权时的「平台账号」登录方式（IDP / CAS 语义）
 - **系统设置** - 系统参数配置
 
 ## 技术栈
@@ -17,7 +18,8 @@
 **后端**
 - Go 1.26 + Gin
 - GORM + SQLite
-- JWT 认证
+- JWT 认证（控制台）/ JWT-RS256（OIDC id_token）
+- 通用 OAuth2/OIDC 客户端渠道（支持 Discovery / 手动端点 / claims 映射）
 
 **前端**
 - Vue 3 + Vite
@@ -114,10 +116,12 @@ bash build.sh
 |------|----------|------|
 | 彩虹兼容 | `/connect.php` | 彩虹聚合登录协议（login/callback/query），兼容彩虹官方调用方式（根路径、GET/POST），`/api/connect.php` 为等价别名 |
 | REST 接口 | `/api/v1/oauth` | 自研登录接口（login/userinfo/query），MD5 签名校验 |
+| OAuth2/OIDC | `/api/oauth2` | 标准授权服务器协议（authorize/token/userinfo/jwks/revoke/discovery），authorization code + PKCE |
 | 登录渠道 | `/api/oauth` | 各第三方渠道登录/回调（应用会话跳转） |
 | 应用管理 | `/api/apps` | 目标站点应用（自动生成凭证、模式、支持类型、回调域名白名单） |
 | 登录记录 | `/api/logins` | 登录记录的增删改查、导入导出 |
 | 认证 | `/api/auth` | 平台注册、登录、找回密码、用户中心（资料/密码/第三方绑定） |
+| Passkey | `/api/auth/passkey` | WebAuthn 通行密钥注册/登录/管理 |
 | 渠道配置 | `/api/providers` | 第三方登录渠道凭据配置 |
 | 通知 | `/api/notifications` | 通知渠道与日志管理 |
 | 设置 | `/api/settings` | 系统设置、用户管理 |
@@ -147,6 +151,30 @@ GET /connect.php?act=callback&appid={appid}&appkey={appkey}&type=gitee&code={cod
 ### REST 接口签名规则
 
 除 `sign` 外的参数按 key 升序拼接为 `k1=v1&k2=v2...`，末尾追加 `&key={appkey}`，整体取 MD5 作为 `sign`。`userinfo`/`query` 仅凭签名鉴权，`login` 需携带 `appid`+`appkey`。
+
+### OAuth2 / OIDC 标准协议接入（授权服务器）
+
+本平台同时可作为标准 OAuth2 / OIDC 授权服务器（authorization code flow），
+任意 OIDC/OAuth2 客户端（oidc-client、Keycloak 等）均可接入：
+
+```text
+授权   GET  {HOST}/api/oauth2/authorize?response_type=code&client_id={appid}&redirect_uri=...&scope=openid%20profile&state=...
+回调   {redirect_uri}?code=...&state=...
+令牌   POST {HOST}/api/oauth2/token   (grant_type=authorization_code / refresh_token)
+用户   GET  {HOST}/api/oauth2/userinfo  (Authorization: Bearer <access_token>)
+发现   GET  {HOST}/api/oauth2/.well-known/openid-configuration
+公钥   GET  {HOST}/api/oauth2/jwks   (id_token RS256 验签，kid=oauthgo-rsa-1)
+```
+
+- 凭证：`appid` = `client_id`、`appkey` = `client_secret`；应用模式需为 `oauth2` / `compat` 并在「OAuth2/OIDC 回调地址」配置精确回调 URL。
+- `/authorize` 未指定 `type` 时返回授权页：可选择第三方渠道，也可使用 **OauthGo 平台账号**（密码或 Passkey）登录后直接授权——平台可作为 IDP / CAS 为用户提供单点登录。
+- 支持 PKCE（S256/plain）、refresh_token 轮换、scope 含 `openid` 时签发 RS256 id_token、state/nonce 回传与一次性授权码。
+
+### 通用 OAuth2/OIDC 登录渠道（客户端）
+
+在「登录渠道」中启用 `oauth2`（通用 OAuth2/OIDC）渠道，填入外部身份源的
+Discovery URL 或手动端点 + Client ID/Secret + scope，即可让平台用户使用外部
+OIDC 身份源登录（可作为彩虹/REST 聚合的登录类型透传给目标站点）。
 
 ## 项目结构
 

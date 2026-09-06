@@ -47,6 +47,10 @@ func migrate() {
 		&models.VerificationCode{},
 		&models.Provider{},
 		&models.ProviderAccount{},
+		&models.OAuthCode{},
+		&models.OAuthAccessToken{},
+		&models.OAuthRefreshToken{},
+		&models.PasskeyCredential{},
 	); err != nil {
 		log.Fatalf("数据库迁移失败: %v", err)
 	}

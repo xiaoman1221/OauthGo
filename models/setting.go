@@ -41,6 +41,7 @@ func DefaultSettingDefs() []SettingDef {
 
 		// 安全设置
 		{Key: "password_min_length", Value: "6", Description: "密码最小长度", Group: "security"},
+		{Key: "oauth_jwt_private_key", Value: "", Description: "OAuth2/OIDC id_token 签名私钥（RS256，首次签发自动生成）", Group: "security", Sensitive: true},
 		{Key: "code_length", Value: "6", Description: "验证码长度", Group: "security"},
 		{Key: "code_expire_minutes", Value: "10", Description: "验证码有效期（分钟）", Group: "security"},
 

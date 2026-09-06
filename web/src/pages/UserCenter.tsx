@@ -9,16 +9,18 @@ import { StatusBadge } from '@/components/status-badge'
 import { UserAvatar } from '@/components/user-avatar'
 import { Separator } from '@/components/ui/separator'
 import { ConfirmDialog } from '@/components/ui/confirm'
-import { authApi, type Binding } from '@/lib/api'
+import { authApi, type Binding, type PasskeyCredential } from '@/lib/api'
+import { isWebAuthnSupported, startPasskeyRegistration } from '@/lib/passkey'
 import { useUserStore } from '@/store/user'
 import { cn } from '@/lib/utils'
 
-type Tab = 'profile' | 'password' | 'bindings'
+type Tab = 'profile' | 'password' | 'bindings' | 'passkey'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'profile', label: '基本资料' },
   { key: 'password', label: '修改密码' },
-  { key: 'bindings', label: '账号绑定' }
+  { key: 'bindings', label: '账号绑定' },
+  { key: 'passkey', label: 'Passkey / 安全密钥' }
 ]
 
 export default function UserCenter() {
@@ -54,6 +56,10 @@ export default function UserCenter() {
   // bindings
   const [bindingLoading, setBindingLoading] = useState('')
   const [unbindTarget, setUnbindTarget] = useState<Binding | null>(null)
+
+  // passkey
+  const [passkeys, setPasskeys] = useState<PasskeyCredential[]>([])
+  const [passkeyBusy, setPasskeyBusy] = useState(false)
 
   useEffect(() => {
     applyUser()
@@ -93,6 +99,50 @@ export default function UserCenter() {
 
   const emailChanged = email.trim() !== origEmail
   const phoneChanged = phone.trim() !== origPhone
+
+  const loadPasskeys = async () => {
+    try {
+      const data = await authApi.passkeys()
+      setPasskeys(Array.isArray(data.list) ? data.list : [])
+    } catch {
+      setPasskeys([])
+    }
+  }
+
+  const onRegisterPasskey = async () => {
+    if (!isWebAuthnSupported()) {
+      toast.error('当前浏览器不支持 WebAuthn / Passkey')
+      return
+    }
+    setPasskeyBusy(true)
+    try {
+      const stamp = new Date()
+      const name =
+        'Passkey-' +
+        String(stamp.getMonth() + 1).padStart(2, '0') +
+        String(stamp.getDate()).padStart(2, '0') +
+        '-' +
+        String(stamp.getHours()).padStart(2, '0') +
+        String(stamp.getMinutes()).padStart(2, '0')
+      await startPasskeyRegistration(name)
+      toast.success('Passkey 注册成功，之后可在登录页无密码登录')
+      await loadPasskeys()
+    } catch (err) {
+      toast.error((err as Error).message || 'Passkey 注册失败')
+    } finally {
+      setPasskeyBusy(false)
+    }
+  }
+
+  const onDeletePasskey = async (id: number) => {
+    try {
+      await authApi.removePasskey(id)
+      toast.success('已删除 Passkey')
+      await loadPasskeys()
+    } catch (err) {
+      toast.error((err as Error).message || '删除失败')
+    }
+  }
 
   const onSaveProfile = async () => {
     setSaving(true)
@@ -187,6 +237,12 @@ export default function UserCenter() {
       toast.error((err as Error).message)
     }
   }
+
+  // 组件挂载后加载 Passkey 列表
+  useEffect(() => {
+    loadPasskeys()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <div>
@@ -325,6 +381,39 @@ export default function UserCenter() {
                         {bindingLoading === p.name ? '跳转中…' : '绑定'}
                       </Button>
                     )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {tab === 'passkey' && (
+            <div className="max-w-xl">
+              <p className="mb-4 text-sm text-muted-foreground">
+                使用 Passkey / 安全密钥可在登录页无密码登录，也能作为 OAuth2/OIDC 授权时的平台账号登录方式。
+              </p>
+              <Button onClick={onRegisterPasskey} disabled={passkeyBusy}>
+                {passkeyBusy ? '请按系统提示完成验证…' : '注册 Passkey'}
+              </Button>
+              <div className="mt-4 space-y-2">
+                {passkeys.length === 0 && (
+                  <p className="text-sm text-muted-foreground">尚未注册任何 Passkey。</p>
+                )}
+                {passkeys.map((k) => (
+                  <div key={k.id} className="flex items-center justify-between rounded-md border border-border px-4 py-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">{k.name}</span>
+                        <StatusBadge status="success">已注册</StatusBadge>
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        注册于 {new Date(k.created_at).toLocaleString()}
+                        {k.last_used_at ? ` · 最近使用 ${new Date(k.last_used_at).toLocaleString()}` : ''}
+                      </div>
+                    </div>
+                    <Button variant="outline" size="sm" className="text-destructive" onClick={() => onDeletePasskey(k.id)}>
+                      删除
+                    </Button>
                   </div>
                 ))}
               </div>

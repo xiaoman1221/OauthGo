@@ -60,13 +60,15 @@ const TYPE_LABELS: Record<string, string> = {
   apple: 'Apple',
   discord: 'Discord',
   facebook: 'Facebook',
-  linkedin: 'LinkedIn'
+  linkedin: 'LinkedIn',
+  oauth2: '通用OAuth2/OIDC'
 }
 
 const MODE_LABELS: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' }> = {
   compat: { label: '兼容模式', variant: 'default' },
   rainbow: { label: '仅彩虹协议', variant: 'secondary' },
-  rest: { label: '仅REST接口', variant: 'outline' }
+  rest: { label: '仅REST接口', variant: 'outline' },
+  oauth2: { label: '仅OAuth2/OIDC', variant: 'outline' }
 }
 
 interface AppForm {
@@ -78,6 +80,8 @@ interface AppForm {
   appid: string
   app_key: string
   domains: string
+  redirect_uris: string
+  enable_refresh: boolean
   status: number
   regenerate_key: boolean
 }
@@ -90,6 +94,8 @@ const emptyForm: AppForm = {
   appid: '',
   app_key: '',
   domains: '',
+  redirect_uris: '',
+  enable_refresh: false,
   status: 1,
   regenerate_key: false
 }
@@ -153,6 +159,8 @@ export default function Apps() {
       appid: row.appid,
       app_key: row.app_key,
       domains: row.domains,
+      redirect_uris: (row.redirect_uris || []).join('\n'),
+      enable_refresh: !!row.enable_refresh,
       status: row.status,
       regenerate_key: false
     })
@@ -169,6 +177,11 @@ export default function Apps() {
         mode: form.mode,
         types: form.types,
         domains: form.domains,
+        redirect_uris: form.redirect_uris
+          .split(/\n/)
+          .map((s) => s.trim())
+          .filter(Boolean),
+        enable_refresh: form.enable_refresh,
         status: form.status,
         regenerate_key: form.regenerate_key
       }
@@ -198,6 +211,11 @@ export default function Apps() {
         mode: form.mode,
         types: form.types,
         domains: form.domains,
+        redirect_uris: form.redirect_uris
+          .split(/\n/)
+          .map((s) => s.trim())
+          .filter(Boolean),
+        enable_refresh: form.enable_refresh,
         status: form.status,
         regenerate_key: true
       })
@@ -223,6 +241,8 @@ export default function Apps() {
     }
   }
 
+  const rowById = (id?: number) => apps.find((a) => a.id === id)
+
   const copy = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text)
@@ -234,7 +254,7 @@ export default function Apps() {
 
   const openDocs = (row: App) => {
     setDocsApp(row)
-    setDocsTab(row.mode === 'rest' ? 'rest' : 'rainbow')
+    setDocsTab(row.mode === 'rest' ? 'rest' : row.mode === 'oauth2' ? 'oauth2' : 'rainbow')
   }
 
   const baseUrl = window.location.origin
@@ -243,6 +263,7 @@ export default function Apps() {
     const type = (docsApp.types && docsApp.types[0]) || 'qq'
     const domain = (docsApp.domains || '').split(/\n/).map((s) => s.trim()).filter(Boolean)[0] || 'example.com'
     const callback = `https://${domain}/oauth/callback`
+    const oauth2Callback = ((docsApp.redirect_uris || [])[0]) || callback
     return {
       type,
       callback,
@@ -265,7 +286,19 @@ export default function Apps() {
         { appid: docsApp.appid, type, social_uid: 'AD3F5033279C8187CBCBB29235D5F827', sign: 'md5(...)' },
         null,
         2
-      )
+      ),
+      oauth2Callback,
+      oauth2Authorize: `${baseUrl}/authorize?response_type=code&client_id=${docsApp.appid}&redirect_uri=${encodeURIComponent(oauth2Callback)}&scope=openid%20profile&state=YOUR_STATE`,
+      oauth2Return: `${oauth2Callback}?code=520DD95263C1CFEA0870FBB66E******&state=YOUR_STATE`,
+      oauth2Token: `curl -X POST ${baseUrl}/token \\
+  -d "grant_type=authorization_code" \\
+  -d "code=520DD95263C1CFEA0870FBB66E******" \\
+  -d "client_id=${docsApp.appid}" \\
+  -d "client_secret=${docsApp.app_key}" \\
+  -d "redirect_uri=${encodeURIComponent(oauth2Callback)}"`,
+      oauth2Userinfo: `curl ${baseUrl}/userinfo \\
+  -H "Authorization: Bearer ACCESS_TOKEN"`,
+      oauth2Discovery: docsApp.oidc_discovery_url || `${baseUrl}/.well-known/openid-configuration`
     }
   }, [docsApp, baseUrl])
 
@@ -392,7 +425,7 @@ export default function Apps() {
             <div className="space-y-2">
               <Label>接入模式</Label>
               <div className="flex flex-wrap gap-2">
-                {(['compat', 'rainbow', 'rest'] as const).map((m) => (
+                {(['compat', 'rainbow', 'rest', 'oauth2'] as const).map((m) => (
                   <button
                     key={m}
                     type="button"
@@ -407,7 +440,9 @@ export default function Apps() {
                   </button>
                 ))}
               </div>
-              <p className="text-xs text-muted-foreground">兼容模式同时开放彩虹聚合登录协议与 REST 风格接口。</p>
+              <p className="text-xs text-muted-foreground">
+                兼容模式同时开放彩虹聚合登录协议、REST 风格接口与标准 OAuth2/OIDC 授权服务器协议。
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -494,8 +529,55 @@ export default function Apps() {
                   placeholder={'example.com\nwww.example.com'}
                 />
                 <p className="text-xs leading-relaxed text-muted-foreground">
-                  每个域名一行（可含子域名）。redirect_uri 的域名等于白名单域名或其子域名时允许回跳，区分子域名。
+                  每个域名一行（可含子域名）。redirect_uri 的域名等于白名单域名或其子域名时允许回跳，区分子域名（彩虹/REST 协议使用）。
                 </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>OAuth2/OIDC 回调地址</Label>
+                <Textarea
+                  value={form.redirect_uris}
+                  onChange={(e) => setForm({ ...form, redirect_uris: e.target.value })}
+                  rows={3}
+                  placeholder={'https://example.com/oauth/callback'}
+                />
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  每行一个完整回调地址（精确匹配）。接入标准 OAuth2 / OIDC（authorization code flow）时必填。
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>OIDC Discovery URL（自动发现）</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={form.id ? (rowById(form.id)?.oidc_discovery_url || '') : ''}
+                    readOnly
+                    className="font-mono text-xs"
+                    placeholder="保存后自动生成"
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={() => rowById(form.id)?.oidc_discovery_url && copy(rowById(form.id)!.oidc_discovery_url)}
+                  >
+                    复制
+                  </Button>
+                </div>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  供 oidc-client / Keycloak 等 SDK 配置（issuer 地址即本站 HOST）。
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <Label>签发刷新令牌</Label>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">
+                    {form.enable_refresh ? '允许 refresh_token 轮换' : '不签发 refresh_token'}
+                  </span>
+                  <Switch
+                    checked={form.enable_refresh}
+                    onCheckedChange={(v) => setForm({ ...form, enable_refresh: v })}
+                  />
+                </div>
               </div>
             </div>
 
@@ -541,6 +623,7 @@ export default function Apps() {
             <TabsList>
               <TabsTrigger value="rainbow">彩虹聚合协议</TabsTrigger>
               <TabsTrigger value="rest">REST 接口</TabsTrigger>
+              <TabsTrigger value="oauth2">OAuth2/OIDC</TabsTrigger>
               <TabsTrigger value="sign">签名规则</TabsTrigger>
             </TabsList>
             {docs && (
@@ -589,6 +672,31 @@ Content-Type: application/json
 
 ${docs.restQuery}`} />
                   </div>
+                </TabsContent>
+                <TabsContent value="oauth2" className="space-y-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">0. OIDC Discovery（可选，主流 SDK 自动发现）</p>
+                    <CodeBlock code={docs.oauth2Discovery} />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">1. 发起授权（浏览器跳转，appid 即 client_id、appkey 即 client_secret）</p>
+                    <CodeBlock code={docs.oauth2Authorize} />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">2. 用户授权后 302 回跳（GET）</p>
+                    <CodeBlock code={docs.oauth2Return} />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">3. 用 code 换取令牌（access_token / refresh_token / id_token）</p>
+                    <CodeBlock code={docs.oauth2Token} />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">4. 获取用户信息（Bearer access_token）</p>
+                    <CodeBlock code={docs.oauth2Userinfo} />
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    支持 PKCE（code_challenge + code_challenge_method=S256）、refresh_token 轮换与 RS256 签名的 id_token（公钥见 /jwks）。兼容旧前缀 /api/oauth2/* 别名。
+                  </p>
                 </TabsContent>
                 <TabsContent value="sign" className="space-y-3">
                   <p className="text-sm text-muted-foreground">REST 接口的 userinfo / query 使用服务端签名校验：</p>

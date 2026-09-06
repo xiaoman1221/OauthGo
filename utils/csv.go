@@ -29,12 +29,13 @@ func ExportLoginRecordsToCSV(path string, records []models.LoginRecord) error {
 	for _, r := range records {
 		row := []string{
 			strconv.FormatUint(uint64(r.ID), 10),
-			r.AppName,
-			r.Username,
-			r.Nickname,
-			r.Platform,
-			r.IP,
-			r.Location,
+			// 防 CSV 公式注入：以 = + - @ 或控制字符开头的单元格加前导单引号
+			csvSafe(r.AppName),
+			csvSafe(r.Username),
+			csvSafe(r.Nickname),
+			csvSafe(r.Platform),
+			csvSafe(r.IP),
+			csvSafe(r.Location),
 			r.LoginTime.Format(loginTimeFormat),
 			strconv.Itoa(r.Status),
 		}
@@ -43,4 +44,16 @@ func ExportLoginRecordsToCSV(path string, records []models.LoginRecord) error {
 		}
 	}
 	return nil
+}
+
+// csvSafe 对可能被电子表格当作公式的单元格加前导单引号
+func csvSafe(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '	', '':
+		return "'" + s
+	}
+	return s
 }

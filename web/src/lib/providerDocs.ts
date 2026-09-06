@@ -37,6 +37,43 @@ export type ProviderSchemaRaw = Partial<ProviderSchema> & {
 }
 
 export const channelSchemas: Record<string, ProviderSchemaRaw> = {
+  oauth2: {
+    name: 'oauth2',
+    displayName: '通用 OAuth2/OIDC',
+    category: 'social',
+    idLabel: 'Client ID',
+    secretLabel: 'Client Secret',
+    idPlaceholder: '外部 OAuth2/OIDC 服务分配的 Client ID',
+    secretPlaceholder: '外部 OAuth2/OIDC 服务分配的 Client Secret',
+    tips: '接入任意标准的 OAuth2 / OIDC 身份源（如自建 Keycloak、Auth0、Azure AD、GitLab 等）。推荐填写 Discovery 地址自动解析端点；纯 OAuth2 服务可手动填写三个端点。',
+    registerUrl: '',
+    registerLabel: '',
+    fields: ['Client ID', 'Client Secret', 'Discovery / 端点配置', 'Scope'],
+    steps: [
+      '在外部 OAuth2/OIDC 服务中创建应用，获取 Client ID 与 Client Secret。',
+      '把下方回调地址登记为外部服务的授权回调地址（Redirect URI）。',
+      '推荐在下方填写 Discovery 文档地址；若无 Discovery，则手动填写 authorize / token / userinfo 三个端点。',
+      '保存并点击「测试渠道」验证配置，通过后开启「应用于主站登录」。'
+    ],
+    callbackNote: '将下方回调地址原样填入外部服务的 Redirect URI / 授权回调域名配置。',
+    notes: [
+      'Discovery URL 示例：https://idp.example.com/.well-known/openid-configuration',
+      '纯 OAuth2 服务（无 OIDC Discovery 或 userinfo）需要手动填写端点并在 userinfo_url 提供用户信息接口。',
+      'claims_map 可把外部字段映射为本平台字段，例如 {"openid":"sub","nickname":"name"}。'
+    ],
+    configFields: [
+      { key: 'discovery_url', label: 'Discovery URL（推荐）', type: 'input', placeholder: 'https://idp.example.com/.well-known/openid-configuration' },
+      { key: 'authorize_url', label: '授权端点 authorize_url', type: 'input', placeholder: 'https://idp.example.com/oauth2/authorize' },
+      { key: 'token_url', label: '令牌端点 token_url', type: 'input', placeholder: 'https://idp.example.com/oauth2/token' },
+      { key: 'userinfo_url', label: '用户信息端点 userinfo_url', type: 'input', placeholder: 'https://idp.example.com/oauth2/userinfo' },
+      { key: 'scope', label: 'Scope', type: 'input', placeholder: 'openid profile email' },
+      { key: 'token_auth', label: 'Token 请求认证方式', type: 'select', options: [{ label: 'POST 表单（默认）', value: 'post' }, { label: 'HTTP Basic', value: 'basic' }] },
+      { key: 'claims_map', label: 'Claims 映射（JSON，可选）', type: 'textarea', rows: 3, placeholder: '{"openid":"sub","nickname":"name","avatar":"picture","email":"email"}' }
+    ],
+    divider: 'OAuth2/OIDC 配置',
+    supportProxy: true
+  },
+
   wechat: {
     name: 'wechat',
     displayName: '微信',
