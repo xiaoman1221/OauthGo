@@ -1,32 +1,48 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
+import { authApi } from '@/lib/api'
 import { useUserStore } from '@/store/user'
 
 export default function OauthCallback() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const setToken = useUserStore((s) => s.setToken)
+  const setUserInfo = useUserStore((s) => s.setUserInfo)
   const fetchUser = useUserStore((s) => s.fetchUser)
   const [status, setStatus] = useState('第三方登录中，请稍候…')
 
   useEffect(() => {
+    const code = params.get('code')
     const token = params.get('token')
-    if (!token) {
-      setStatus('未获取到登录令牌')
-      toast.error('登录失败：未获取到令牌')
+    if (!code && !token) {
+      setStatus('未获取到登录凭据')
+      toast.error('登录失败：未获取到登录凭据')
       setTimeout(() => navigate('/login', { replace: true }), 1200)
       return
     }
-    setToken(token)
-    fetchUser()
+
+    // 自动适配回调参数：
+    // - code：一次性登录码，调用 /auth/code-exchange 兑换 JWT（推荐，JWT 不进入 URL/浏览器历史）
+    // - token：旧流程直接携带 JWT（保留兼容）
+    const login = code
+      ? authApi.exchangeLoginCode(code).then((data) => {
+          setToken(data.token)
+          if (data.user) setUserInfo(data.user)
+        })
+      : Promise.resolve().then(() => {
+          setToken(token!)
+          return fetchUser()
+        })
+
+    login
       .then(() => {
         toast.success('登录成功')
         navigate('/', { replace: true })
       })
-      .catch(() => {
-        setStatus('登录状态校验失败')
-        toast.error('登录失败')
+      .catch((err) => {
+        setStatus('登录失败')
+        toast.error((err as Error).message || '登录失败')
         setTimeout(() => navigate('/login', { replace: true }), 1200)
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps

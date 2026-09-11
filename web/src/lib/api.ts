@@ -153,6 +153,9 @@ export const authApi = {
   sendCode: (data: { scope: string; account: string }) => post<unknown>('/auth/send-code', data),
   forgot: (data: { account: string; code: string; password: string }) =>
     post<unknown>('/auth/forgot', data),
+  // 一次性登录码兑换 JWT（/oauth-callback?code= 回跳后调用）
+  exchangeLoginCode: (code: string) =>
+    post<{ token: string; user: User }>('/auth/code-exchange', { code }),
   me: () => get<User>('/auth/me'),
   updateProfile: (data: Record<string, unknown>) => put<User>('/auth/me', data),
   changePassword: (data: { old_password?: string; new_password: string }) =>

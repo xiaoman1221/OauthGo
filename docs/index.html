@@ -178,7 +178,7 @@
     <div class="flow">
       <div class="step"><div class="num">1</div><div class="txt">目标站点跳转 <code>connect.php?act=login</code>，携带 <code>appid/appkey/type/redirect_uri</code>，获取第三方授权地址。</div></div>
       <div class="step"><div class="num">2</div><div class="txt">目标站点将用户重定向到返回的 <code>url</code>，引导用户在第三方平台完成授权。</div></div>
-      <div class="step"><div class="num">3</div><div class="txt">授权完成后平台 302 跳回 <code>redirect_uri</code>，并携带 <code>type</code>、<code>code</code> 两个参数。</div></div>
+      <div class="step"><div class="num">3</div><div class="txt">授权完成后平台 302 跳回 <code>redirect_uri</code>，并携带 <code>type</code>、<code>code</code>、<code>sign</code> 三个参数（<code>sign</code> 覆盖 <code>type</code>+<code>code</code>，可服务端二次校验）。</div></div>
       <div class="step"><div class="num">4</div><div class="txt">目标站点调用 <code>connect.php?act=callback</code>，用 <code>code</code> 换取用户信息（一次性），完成登录。</div></div>
     </div>
 
@@ -207,7 +207,7 @@
 
     <h3>2. 回调（由平台 302 跳回）</h3>
     <p>用户完成授权后，平台自动跳转到目标站点的 <code>redirect_uri</code>，并追加以下参数：</p>
-    <pre><code>https://example.com/callback?type=gitee&amp;code=xxxx
+    <pre><code>https://example.com/callback?type=gitee&amp;code=xxxx&amp;sign=xxxx
 </code><button class="copy-btn" onclick="copy(this)">复制</button></pre>
 
     <h3>3. 换取用户信息（act=callback）</h3>
@@ -253,6 +253,8 @@
         <tr><td>wework</td><td>企业微信</td></tr>
       </tbody>
     </table>
+    <p>兼容模式（compat）的 <code>type</code> 也接受渠道名本身（如 <code>wechat</code>、<code>gitee</code>）；
+      REST / OAuth2 模式仅使用渠道名（provider name），见「登录渠道」页中的渠道标识。</p>
   </div>
 
   <!-- ===================== REST 接口 ===================== -->
@@ -267,7 +269,7 @@
     <h2>接入流程</h2>
     <div class="flow">
       <div class="step"><div class="num">1</div><div class="txt">目标站点调用 <code>POST /api/v1/oauth/login</code>，携带 <code>appid/appkey/type/redirect_uri</code>，获取第三方授权地址。</div></div>
-      <div class="step"><div class="num">2</div><div class="txt">用户授权完成后平台 302 跳回 <code>redirect_uri</code>，携带 <code>type</code>、<code>code</code>。</div></div>
+      <div class="step"><div class="num">2</div><div class="txt">用户授权完成后平台 302 跳回 <code>redirect_uri</code>，携带 <code>type</code>、<code>code</code>、<code>sign</code>。</div></div>
       <div class="step"><div class="num">3</div><div class="txt">目标站点调用 <code>POST /api/v1/oauth/userinfo</code>，用 <code>code</code> + <code>sign</code> 换取用户信息（一次性），完成登录。</div></div>
     </div>
 
@@ -324,7 +326,8 @@ sign = md5(原串)
 
     <h2>4. 获取已启用渠道</h2>
     <p><code>GET /api/oauth/providers</code>，公开接口，无需鉴权：</p>
-    <pre><code>[ { "name": "gitee", "display_name": "Gitee", "category": "social" } ]
+    <pre><code>{ "code": 0, "message": "success",
+  "data": [ { "name": "gitee", "display_name": "Gitee", "category": "social" } ] }
 </code><button class="copy-btn" onclick="copy(this)">复制</button></pre>
 
     <h2>错误码</h2>
@@ -386,7 +389,7 @@ sign = md5(原串)
 </code><button class="copy-btn" onclick="copy(this)">复制</button></pre>
 
     <h2>3. 换取令牌</h2>
-    <p>客户端认证支持表单（client_id + client_secret）或 HTTP Basic；请求 <code>offline_access</code> scope 或应用开启「签发刷新令牌」时返回 refresh_token。</p>
+    <p>客户端认证支持表单（client_id + client_secret）或 HTTP Basic；应用在「应用管理」中开启「签发刷新令牌」时返回 refresh_token。</p>
     <pre><code>curl -X POST https://your-host/token \
   -d "grant_type=authorization_code" \
   -d "code=xxxx" \

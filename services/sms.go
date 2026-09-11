@@ -289,6 +289,8 @@ func hmacSHA256(key []byte, data string) []byte {
 	return mac.Sum(nil)
 }
 
+// md5Hex 计算字符串 MD5（小写十六进制）。
+// 仅用于短信宝 API 的密码参数（其接口规范固定要求 md5(password)），属兼容性要求。
 func md5Hex(s string) string {
 	sum := md5.Sum([]byte(s))
 	return hex.EncodeToString(sum[:])

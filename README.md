@@ -1,203 +1,166 @@
 # OauthGo
 
-统一授权管理 - 使用Go语言编写的集成各类第三方登录于一体的综合平台,兼容彩虹聚合登录。
+使用 Go 编写的第三方登录聚合平台（兼容彩虹聚合登录），同时可作为标准 **OAuth2 / OIDC 授权服务器**与 **IDP / CAS**，为下游站点提供统一登录与单点授权。
 
 ## 功能特性
 
-- **第三方登录聚合** - 对标彩虹聚合登录，为其他站点提供第三方登录服务，兼容彩虹协议、自研 REST 接口与标准 OAuth2/OIDC 授权服务器协议（authorization code + PKCE + RS256 id_token + Discovery/JWKS）
-- **应用管理** - 目标站点注册应用，自动生成 AppID/AppKey，配置支持登录类型（QQ/微信/支付宝/微博/百度/抖音/钉钉/Gitee/企业微信等）与回调域名白名单（区分子域名）
-- **登录管理** - 登录记录的增删改查、批量操作、CSV导入导出
-- **到期通知** - 多渠道域名到期提醒（邮件、Webhook等）
-- **用户系统** - 多用户支持、角色权限管理
-- **用户中心** - 个人资料（昵称/头像/用户名/邮箱/手机号）修改、修改密码、绑定/解绑第三方登录
-- **Passkey / WebAuthn** - 无密码登录与通行密钥管理（登录页 Passkey 登录、用户中心注册/删除），并可作为 OIDC 授权时的「平台账号」登录方式（IDP / CAS 语义）
-- **系统设置** - 系统参数配置
+- **三种接入协议** - 彩虹聚合登录兼容（`/connect.php`）、自研 REST 接口（MD5 签名）、标准 OAuth2/OIDC 授权服务器（authorization code + PKCE + RS256 id_token + Discovery/JWKS + revoke/introspect）
+- **20 个登录渠道** - QQ、微信、支付宝、微博、百度、抖音、钉钉、企业微信、飞书、Gitee、GitHub、Google、Microsoft、Apple、Discord、Facebook、LinkedIn 等；另含「通用 OAuth2/OIDC」渠道（Discovery / 手动端点 / claims 映射），可接入任意外部身份源
+- **平台账号授权（IDP / CAS）** - OAuth2 授权页支持使用平台账号（密码或 Passkey）直接授权，实现单点登录
+- **Passkey / WebAuthn** - 无密码登录与通行密钥管理（登录页直登、用户中心注册/删除）
+- **应用管理** - AppID/AppKey 自动生成；rainbow / rest / oauth2 / compat 四种模式；渠道白名单、回调域名白名单（区分子域名）、OAuth2 精确回调白名单、refresh_token 签发开关；普通用户应用配额
+- **用户系统** - 注册（可邮箱验证）、用户名/邮箱/手机号登录、验证码找回密码、管理员/普通用户角色、用户中心（资料/改密/第三方绑定）
+- **登录记录** - 分页查询、批量删除、CSV 导出（防公式注入），普通用户仅可见自己应用的记录
+- **系统设置** - SMTP 邮件与阿里云/腾讯云/短信宝验证码、邮件模板、SOCKS5 代理（境外渠道）、头像源（QQ / Gravatar 镜像）、登录页背景等
 
 ## 技术栈
 
-**后端**
-- Go 1.26 + Gin
-- GORM + SQLite
-- JWT 认证（控制台）/ JWT-RS256（OIDC id_token）
-- 通用 OAuth2/OIDC 客户端渠道（支持 Discovery / 手动端点 / claims 映射）
+**后端**：Go 1.26 + Gin、GORM + SQLite（单文件零依赖部署）、go-webauthn、JWT（控制台 HS256 / OIDC id_token RS256）
 
-**前端**
-- Vue 3 + Vite
-- Element Plus
-- Pinia 状态管理
-- Vue Router
+**前端**：React 18 + TypeScript + Vite、Shadcn UI + Tailwind CSS、Zustand、React Router
 
 ## 快速开始
 
 ### Docker 部署（推荐）
 
 ```bash
-docker compose up -d --build
+docker compose up -d   # 使用官方镜像 xiaoman1221/oauthgo:latest
 ```
 
-访问 http://localhost:8080
+访问 http://localhost:8080，数据持久化在宿主 `./data` 目录（挂载到容器 `/app/data`）。
 
-> 数据默认保存在 Docker 命名卷 `oauthgo-data`（挂载到容器 `/app/data`）中。
-> 建议在部署前设置环境变量 `JWT_KEY`（持久化随机密钥）与 `HOST`（站点对外地址，
-> 用于第三方登录回调跳转），示例：
+建议部署前设置 `JWT_KEY`（随机长密钥）与 `HOST`（站点对外地址，决定第三方回调与 OIDC issuer）：
 
 ```bash
 JWT_KEY=your-strong-random-secret HOST=https://oauth.example.com docker compose up -d
 ```
 
-#### 中国大陆网络环境构建
-
-Dockerfile 默认已使用大陆可直连的镜像源（`goproxy.cn`、`sum.golang.google.cn`、
-`npmmirror`），无需额外配置。海外构建需切回官方源：
+本地构建镜像（可选）：
 
 ```bash
-NPM_REGISTRY=https://registry.npmjs.org \
-GOPROXY=https://proxy.golang.org,direct \
-GOSUMDB=sum.golang.org \
-docker compose build
+docker build -t xiaoman1221/oauthgo:latest .
+docker compose up -d
 ```
 
-若无法从 Docker Hub 拉取基础镜像，可覆盖基础镜像（阿里云镜像仓库）或为 Docker
-守护进程配置 registry-mirror：
+<details>
+<summary>中国大陆网络环境构建</summary>
+
+Dockerfile 默认使用大陆可直连源（`goproxy.cn`、`npmmirror`），无需额外配置。海外构建切回官方源：
 
 ```bash
-BASE_NODE_IMAGE=registry.cn-hangzhou.aliyuncs.com/library/node:20-alpine \
-BASE_GO_IMAGE=registry.cn-hangzhou.aliyuncs.com/library/golang:1.26-alpine \
-BASE_RUNTIME_IMAGE=registry.cn-hangzhou.aliyuncs.com/library/alpine:3.20 \
-docker compose build
+docker build \
+  --build-arg GOPROXY=https://proxy.golang.org,direct \
+  --build-arg GOSUMDB=sum.golang.org \
+  --build-arg NPM_REGISTRY=https://registry.npmjs.org \
+  -t xiaoman1221/oauthgo:latest .
 ```
+
+无法拉取 Docker Hub 基础镜像时，用 `--build-arg BASE_NODE_IMAGE=...` / `BASE_GO_IMAGE=...` / `BASE_RUNTIME_IMAGE=...` 覆盖为阿里云镜像仓库地址。
+
+</details>
 
 ### 手动部署
 
-**环境要求**
-
-- Go 1.26+
-- Node.js 18+
-- npm
-
-**配置**
-
-复制 `.env.example` 为 `.env` 并修改配置：
+环境要求：Go 1.26+、Node.js 18+、npm。
 
 ```bash
-cp .env.example .env
+cp .env.example .env   # 按需修改配置
+make                   # 一键构建前端 + 后端（等价于 bash build.sh），产物 bin/oauthgo
+./bin/oauthgo
 ```
 
-| 变量 | 说明 | 默认值  |
-|------|------|---------|
-| `PORT` | 服务端口 | 8080    |
-| `GIN_MODE` | Gin模式（debug/release） | debug   |
-| `DB_PATH` | 数据库文件路径 | data.db |
-| `JWT_KEY` | JWT密钥 | -       |
-**构建运行**
-
-```bash
-# 一键构建（前端+后端）
-make
-# 或
-bash build.sh
-
-# 运行
-./domain-manager
-```
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `PORT` | 服务端口 | `8080` |
+| `HOST` | 站点对外地址（第三方回调、OIDC issuer、Passkey RP 均由它派生） | `http://localhost:8080` |
+| `JWT_KEY` | 控制台 JWT 密钥，生产环境务必设置为随机长字符串 | 内置默认值（启动时告警） |
+| `GIN_MODE` | Gin 模式（debug / release） | `debug` |
+| `DB_PATH` | SQLite 数据库文件路径 | `data.db` |
+| `TRUSTED_PROXIES` | 可信代理 CIDR（逗号分隔）；反向代理部署时配置，默认不信任任何代理（防伪造 IP） | 空 |
 
 ### 默认账号
 
-首次运行会自动创建管理员账号：
+首次运行自动创建管理员：`admin` / `123456`，**请登录后立即修改密码**。
 
-- 用户名：`admin`
-- 密码：`123456`
+## API 概览
 
-> 请登录后立即修改默认密码。
+| 模块 | 路径 | 说明 |
+|------|------|------|
+| 彩虹协议 | `/connect.php`（`/api/connect.php` 别名） | `act=login/callback/query`，GET/POST，兼容彩虹官方客户端 |
+| REST 接口 | `/api/v1/oauth` | `login` / `userinfo` / `query`，MD5 签名鉴权 |
+| OAuth2/OIDC | `/authorize` `/token` `/userinfo` `/jwks` `/revoke` `/introspect` `/.well-known/openid-configuration` | 标准授权服务器，`/api/oauth2/*` 为等价别名 |
+| 第三方登录 | `/api/oauth` | 渠道发起/回调、主站登录、公开渠道列表 |
+| 认证 | `/api/auth` | 注册、登录、验证码、找回密码、用户中心、第三方绑定、一次性登录码兑换 |
+| Passkey | `/api/auth/passkey` | WebAuthn 注册 / 登录 / 管理 |
+| 应用管理 | `/api/apps` | 应用 CRUD（需登录） |
+| 登录记录 | `/api/logins` | 查询 / 删除 / 批量删除 / CSV 导出（需登录） |
+| 用户管理 | `/api/users` | 仅管理员 |
+| 渠道配置 | `/api/providers` | 渠道凭据配置与测试，仅管理员 |
+| 系统设置 | `/api/settings` | 读取（需登录）/ 写入（仅管理员） |
+| 接口文档 | `/docs` | 接入文档、`openapi.yaml`、Swagger UI（`/docs/swagger`） |
 
-## API 接口
+## 目标站点接入
 
-| 模块 | 路径前缀 | 说明 |
-|------|----------|------|
-| 彩虹兼容 | `/connect.php` | 彩虹聚合登录协议（login/callback/query），兼容彩虹官方调用方式（根路径、GET/POST），`/api/connect.php` 为等价别名 |
-| REST 接口 | `/api/v1/oauth` | 自研登录接口（login/userinfo/query），MD5 签名校验 |
-| OAuth2/OIDC | `/api/oauth2` | 标准授权服务器协议（authorize/token/userinfo/jwks/revoke/discovery），authorization code + PKCE |
-| 登录渠道 | `/api/oauth` | 各第三方渠道登录/回调（应用会话跳转） |
-| 应用管理 | `/api/apps` | 目标站点应用（自动生成凭证、模式、支持类型、回调域名白名单） |
-| 登录记录 | `/api/logins` | 登录记录的增删改查、导入导出 |
-| 认证 | `/api/auth` | 平台注册、登录、找回密码、用户中心（资料/密码/第三方绑定） |
-| Passkey | `/api/auth/passkey` | WebAuthn 通行密钥注册/登录/管理 |
-| 渠道配置 | `/api/providers` | 第三方登录渠道凭据配置 |
-| 通知 | `/api/notifications` | 通知渠道与日志管理 |
-| 设置 | `/api/settings` | 系统设置、用户管理 |
-| 接口文档 | `/docs` | 接入文档（彩虹协议 + REST 接口），`/docs/openapi.yaml` 为 OpenAPI 规范，`/docs/swagger` 为 Swagger UI 在线调试 |
+### 彩虹协议（兼容）
 
-### 目标站点接入（兼容彩虹协议）
-
-1. 平台创建应用，获取 `appid`、`appkey`，并配置支持类型与回调域名白名单
-2. 跳转登录（接口支持 GET/POST，参数可放查询串或表单）：
+1. 平台创建应用，获取 `appid` / `appkey`，配置支持的登录类型与回调域名白名单
+2. 跳转登录（GET/POST 均可，参数可放查询串或表单）：
 
 ```text
 GET /connect.php?act=login&appid={appid}&appkey={appkey}&type=gitee&redirect_uri={redirect_uri}
 ```
 
-返回 `{code:0,msg:"succ",type,url,qrcode:""}`，将用户引导至 `url` 完成授权。
+返回 `{code:0, msg:"succ", url, ...}`，引导用户访问 `url` 完成授权。
 
-3. 授权成功后平台回调 `redirect_uri?state={state}&code={code}&sign={sign}`，目标站点用 `code` 换取用户信息：
+3. 授权后平台回跳 `redirect_uri?type={type}&code={code}&sign={sign}`（`sign` 覆盖 `type`+`code`，可服务端二次校验），用 `code` 换取用户信息：
 
 ```text
 GET /connect.php?act=callback&appid={appid}&appkey={appkey}&type=gitee&code={code}
 ```
 
-返回 `{code:0,msg,type,access_token,social_uid,faceimg,nickname,location,gender,ip}`。
-
-`code` 一次性有效，也可通过 `act=query&social_uid={social_uid}` 随时查询。
+返回 `{code:0, social_uid, access_token, nickname, faceimg, gender, location, ip}`。`code` 一次性有效；也可用 `act=query&social_uid={social_uid}` 随时查询最近登录。
 
 ### REST 接口签名规则
 
-除 `sign` 外的参数按 key 升序拼接为 `k1=v1&k2=v2...`，末尾追加 `&key={appkey}`，整体取 MD5 作为 `sign`。`userinfo`/`query` 仅凭签名鉴权，`login` 需携带 `appid`+`appkey`。
+除 `sign` 外的参数按 key 升序拼接为 `k1=v1&k2=v2...`，末尾追加 `&key={appkey}`，整体取 MD5 作为 `sign`。`userinfo` / `query` 仅凭签名鉴权，`login` 需携带 `appid` + `appkey`。
 
-### OAuth2 / OIDC 标准协议接入（授权服务器）
+### OAuth2 / OIDC（授权服务器）
 
-本平台同时可作为标准 OAuth2 / OIDC 授权服务器（authorization code flow），
-任意 OIDC/OAuth2 客户端（oidc-client、Keycloak 等）均可接入：
+`appid` 即 `client_id`、`appkey` 即 `client_secret`；应用模式需为 `oauth2` / `compat`，并配置「OAuth2/OIDC 回调地址」精确白名单。任意 OIDC/OAuth2 客户端（oidc-client、Keycloak 等）可按 Discovery 自动接入：
 
 ```text
-授权   GET  {HOST}/api/oauth2/authorize?response_type=code&client_id={appid}&redirect_uri=...&scope=openid%20profile&state=...
+授权   GET  {HOST}/authorize?response_type=code&client_id={appid}&redirect_uri=...&scope=openid%20profile&state=...
 回调   {redirect_uri}?code=...&state=...
-令牌   POST {HOST}/api/oauth2/token   (grant_type=authorization_code / refresh_token)
-用户   GET  {HOST}/api/oauth2/userinfo  (Authorization: Bearer <access_token>)
-发现   GET  {HOST}/api/oauth2/.well-known/openid-configuration
-公钥   GET  {HOST}/api/oauth2/jwks   (id_token RS256 验签，kid=oauthgo-rsa-1)
+令牌   POST {HOST}/token    (grant_type=authorization_code / refresh_token)
+用户   GET  {HOST}/userinfo (Authorization: Bearer <access_token>)
+发现   GET  {HOST}/.well-known/openid-configuration
+公钥   GET  {HOST}/jwks     (id_token RS256 验签, kid=oauthgo-rsa-1)
 ```
 
-- 凭证：`appid` = `client_id`、`appkey` = `client_secret`；应用模式需为 `oauth2` / `compat` 并在「OAuth2/OIDC 回调地址」配置精确回调 URL。
-- `/authorize` 未指定 `type` 时返回授权页：可选择第三方渠道，也可使用 **OauthGo 平台账号**（密码或 Passkey）登录后直接授权——平台可作为 IDP / CAS 为用户提供单点登录。
-- 支持 PKCE（S256/plain）、refresh_token 轮换、scope 含 `openid` 时签发 RS256 id_token、state/nonce 回传与一次性授权码。
+- 支持 PKCE（S256/plain）、refresh_token 轮换、nonce 透传写入 id_token、一次性授权码
+- scope 含 `openid` 时签发 RS256 id_token；`profile` / `email` / `phone` scope 控制用户信息字段
+- `/authorize` 未指定 `type` 时返回授权页：可选择第三方渠道，也可使用平台账号（密码或 Passkey）登录后直接授权
 
-### 通用 OAuth2/OIDC 登录渠道（客户端）
+### 通用 OAuth2/OIDC 登录渠道（作为客户端）
 
-在「登录渠道」中启用 `oauth2`（通用 OAuth2/OIDC）渠道，填入外部身份源的
-Discovery URL 或手动端点 + Client ID/Secret + scope，即可让平台用户使用外部
-OIDC 身份源登录（可作为彩虹/REST 聚合的登录类型透传给目标站点）。
+在「登录渠道」中启用 `oauth2` 渠道，填入外部身份源的 Discovery URL（或手动端点）+ Client ID/Secret + scope，即可使用外部 OIDC 身份源登录，并可作为登录类型透传给目标站点。
 
 ## 项目结构
 
 ```
 OauthGo/
-├── config/          # 配置加载
-├── database/        # 数据库初始化与迁移
-├── docs/            # 接口文档资源（index.html / openapi.yaml / swagger.html）
-├── handlers/        # 请求处理器
-├── middleware/       # 中间件（JWT认证）
-├── models/          # 数据模型
-├── router/          # 路由定义
-├── services/        # 业务逻辑
-├── utils/           # 工具函数
-├── web/             # Vue前端
-│   ├── src/
-│   └── dist/        # 前端构建产物
-├── .dockerignore
-├── .env.example     # 环境变量模板
-├── Dockerfile       # 多阶段构建（前端 + 后端）
-├── docker-compose.yml
-├── go.mod
-└── main.go
+├── main.go
+├── config/        # 环境变量配置
+├── router/        # 路由定义
+├── handlers/      # 请求处理器（含测试）
+├── services/      # 业务逻辑
+├── providers/     # 第三方登录渠道适配器（20 个）
+├── models/        # 数据模型
+├── middleware/    # JWT 认证等中间件
+├── database/      # 数据库初始化与迁移
+├── utils/         # 工具函数
+├── docs/          # 内嵌接口文档（openapi.yaml / Swagger UI）
+└── web/           # React 前端（Vite，构建产物 dist/ 由后端托管）
 ```
 
 ## License

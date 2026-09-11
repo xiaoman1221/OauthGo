@@ -11,6 +11,7 @@ type OAuthCode struct {
 	UserID        uint      `gorm:"index;not null" json:"user_id"`
 	Scope         string    `gorm:"size:255" json:"scope"`
 	RedirectURI   string    `gorm:"size:512" json:"redirect_uri"`
+	Nonce         string    `gorm:"size:255" json:"-"` // OIDC nonce（authorize 传入，原样写入 id_token）
 	PKCEChallenge string    `gorm:"size:255" json:"-"` // code_challenge（可选 PKCE）
 	PKCEMethod    string    `gorm:"size:16" json:"-"`  // S256 / plain
 	ExpiresAt     time.Time `json:"expires_at"`

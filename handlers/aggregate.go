@@ -27,7 +27,7 @@ func resolveApp(appID, appKey string, allowedMode ...string) (*models.App, strin
 	if err != nil {
 		return nil, err.Error()
 	}
-	if appKey == "" || app.AppKey != appKey {
+	if appKey == "" || !oauth2SecretEqual(app.AppKey, appKey) {
 		return nil, "appkey 校验失败"
 	}
 	for _, m := range allowedMode {

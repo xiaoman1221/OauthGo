@@ -7,11 +7,14 @@ export function md5(input: string): string {
     const mask = 0xffffffff
     return (a + b) & mask
   }
+  // MD5 摘要按 RFC 1321 §3.1 以小端序逐字节输出，因此每个 32 位字
+  // 需从低位字节到高位字节打印（大端打印会得到整体字节反转的哈希）
   function toHex(value: number) {
     const hex = '0123456789abcdef'
     let output = ''
-    for (let i = 7; i >= 0; i--) {
-      output += hex.charAt((value >>> (i * 4)) & 0x0f)
+    for (let i = 0; i < 4; i++) {
+      const byte = (value >>> (i * 8)) & 0xff
+      output += hex.charAt((byte >> 4) & 0xf) + hex.charAt(byte & 0xf)
     }
     return output
   }
@@ -68,7 +71,8 @@ export function md5(input: string): string {
         f = c ^ (b | ~d)
         g = (7 * i) % 16
       }
-      const temp = addUnsigned(addUnsigned(addUnsigned(addUnsigned(a, f), k[i]), m[g]), s[i])
+      // RFC 1321：temp = a + F + K[i] + M[g]，随后左移 s[i] 位
+      const temp = addUnsigned(addUnsigned(addUnsigned(a, f), k[i]), m[g])
       const rotated = rotateLeft(temp, s[i])
       a = d
       d = c

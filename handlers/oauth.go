@@ -149,9 +149,14 @@ func OAuthLogin(c *gin.Context) {
 			utils.FailInternal(c, "获取用户信息失败："+err.Error())
 			return
 		}
-		token, err := finishLogin(c, name, info)
+		user, err := finishLogin(c, name, info)
 		if err != nil {
 			utils.FailInternal(c, "登录失败："+err.Error())
+			return
+		}
+		token, err := utils.GenerateToken(user.ID, user.Role)
+		if err != nil {
+			utils.FailInternal(c, "生成令牌失败")
 			return
 		}
 		utils.Success(c, gin.H{"token": token})
@@ -217,13 +222,21 @@ func OAuthCallback(c *gin.Context) {
 		return
 	}
 
-	token, err := finishLogin(c, name, info)
+	user, err := finishLogin(c, name, info)
 	if err != nil {
 		utils.FailInternal(c, "登录失败："+err.Error())
 		return
 	}
 
-	c.Redirect(302, baseHost()+"/oauth-callback?token="+token)
+	// 以一次性 code 回跳前端，由前端兑换 JWT：避免平台 JWT 出现在跳转 URL（浏览器历史）中。
+	// 回调页同时兼容旧的 ?token= 参数（自动适配）。
+	loginCode, err := services.IssuePlatformLoginCode(user.ID)
+	if err != nil {
+		utils.FailInternal(c, "签发登录码失败")
+		return
+	}
+
+	c.Redirect(302, buildRedirectURL(baseHost()+"/oauth-callback", map[string]string{"code": loginCode}))
 }
 
 // handleAppCallback 目标站点登录回调：签发授权码并跳回目标站点
@@ -301,16 +314,12 @@ func handleBindCallback(c *gin.Context, providerName string, session services.Bi
 	redirect(map[string]string{"bind": "success", "provider": providerName})
 }
 
-// finishLogin 绑定第三方账号与本地用户，签发 JWT 并记录登录日志
-func finishLogin(c *gin.Context, providerName string, info *providers.UserInfo) (string, error) {
+// finishLogin 绑定第三方账号与本地用户并记录登录日志。
+// 返回用户，由调用方决定签发 JWT（JSON 响应）或一次性登录码（URL 回跳）。
+func finishLogin(c *gin.Context, providerName string, info *providers.UserInfo) (*models.User, error) {
 	user, err := bindProviderUser(providerName, info)
 	if err != nil {
-		return "", err
-	}
-
-	token, err := utils.GenerateToken(user.ID, user.Role)
-	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// 用户中心直登不经过 App，App 名留空（展示为 NULL）
@@ -323,7 +332,7 @@ func finishLogin(c *gin.Context, providerName string, info *providers.UserInfo) 
 		UserAgent: c.Request.UserAgent(),
 		Status:    1,
 	})
-	return token, nil
+	return user, nil
 }
 
 // bindProviderUser 按第三方 openid 查找或创建本地用户
@@ -436,7 +445,8 @@ func loadProvider(name string) (providers.Provider, bool) {
 		ClientSecret: p.ClientSecret,
 		RedirectURL:  p.RedirectURL,
 		Extra:        extra,
-		UseProxy:     extraBool(extra, "use_proxy"),
+		// 代理需同时满足：系统设置「启用 SOCKS5 代理」+ 渠道扩展配置「使用代理」
+		UseProxy: extraBool(extra, "use_proxy") && services.GetBoolSetting("proxy_enabled", false),
 		Proxy: providers.ProxyConfig{
 			Address:  services.GetSetting("proxy_addr", ""),
 			Username: services.GetSetting("proxy_username", ""),
@@ -544,7 +554,8 @@ func TestProvider(c *gin.Context) {
 		ClientSecret: clientSecret,
 		RedirectURL:  callbackURL(name),
 		Extra:        extra,
-		UseProxy:     extraBool(extra, "use_proxy"),
+		// 与 loadProvider 一致：代理需系统设置与渠道配置同时开启
+		UseProxy: extraBool(extra, "use_proxy") && services.GetBoolSetting("proxy_enabled", false),
 		Proxy: providers.ProxyConfig{
 			Address:  services.GetSetting("proxy_addr", ""),
 			Username: services.GetSetting("proxy_username", ""),

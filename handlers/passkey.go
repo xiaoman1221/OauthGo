@@ -160,7 +160,13 @@ func PasskeyLoginFinish(c *gin.Context) {
 		UserAgent: c.Request.UserAgent(),
 		Status:    1,
 	})
-	utils.Success(c, gin.H{"token": token, "user": passkeyUser.User})
+	resp := gin.H{"token": token, "user": passkeyUser.User}
+	// 附带一次性登录码：主站登录前端优先用 code 回跳 /oauth-callback 兑换 JWT，
+	// 避免 token 进入 URL；token 保留供 OAuth2 授权页（platform-login）等旧流程使用
+	if loginCode, codeErr := services.IssuePlatformLoginCode(sess.UserID); codeErr == nil {
+		resp["code"] = loginCode
+	}
+	utils.Success(c, resp)
 }
 
 // PasskeyList 列出当前用户 Passkey（用户中心管理）

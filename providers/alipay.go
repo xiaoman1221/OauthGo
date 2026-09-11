@@ -146,7 +146,11 @@ func alipaySign(params url.Values, privateKey string) (string, error) {
 	if k, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
 		key = k
 	} else if k, err := x509.ParsePKCS8PrivateKey(block.Bytes); err == nil {
-		key = k.(*rsa.PrivateKey)
+		rk, ok := k.(*rsa.PrivateKey)
+		if !ok {
+			return "", fmt.Errorf("支付宝应用私钥必须是 RSA 密钥")
+		}
+		key = rk
 	} else {
 		return "", fmt.Errorf("解析支付宝应用私钥失败")
 	}

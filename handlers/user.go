@@ -154,6 +154,7 @@ func UpdateUser(c *gin.Context) {
 			return
 		}
 		updates["password"] = hash
+		updates["password_set"] = true
 	}
 	if len(updates) == 0 {
 		utils.FailBadRequest(c, "没有需要更新的字段")
@@ -183,10 +184,20 @@ func DeleteUser(c *gin.Context) {
 		utils.FailInternal(c, "删除用户失败")
 		return
 	}
-	// 级联清理该用户的第三方绑定、Passkey 与 OAuth 令牌，避免孤儿数据
+	// 级联清理该用户的第三方绑定、Passkey、OAuth 授权码/令牌与名下应用，避免孤儿数据
+	// （名下应用的授权码与令牌一并清理，防止残留访问能力）
 	database.DB.Where("user_id = ?", id).Delete(&models.ProviderAccount{})
 	database.DB.Where("user_id = ?", id).Delete(&models.PasskeyCredential{})
+	database.DB.Where("user_id = ?", id).Delete(&models.OAuthCode{})
 	database.DB.Where("user_id = ?", id).Delete(&models.OAuthAccessToken{})
 	database.DB.Where("user_id = ?", id).Delete(&models.OAuthRefreshToken{})
+	var apps []models.App
+	database.DB.Where("owner_id = ?", id).Find(&apps)
+	for _, app := range apps {
+		database.DB.Where("client_id = ?", app.AppID).Delete(&models.OAuthCode{})
+		database.DB.Where("client_id = ?", app.AppID).Delete(&models.OAuthAccessToken{})
+		database.DB.Where("client_id = ?", app.AppID).Delete(&models.OAuthRefreshToken{})
+	}
+	database.DB.Where("owner_id = ?", id).Delete(&models.App{})
 	utils.SuccessMsg(c, "删除成功")
 }

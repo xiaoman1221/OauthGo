@@ -45,4 +45,7 @@ func SweepExpiredData() {
 	if err := database.DB.Where("expires_at < ?", now).Delete(&models.OAuthRefreshToken{}).Error; err != nil {
 		log.Printf("[sweep] 清理刷新令牌失败: %v", err)
 	}
+	if err := database.DB.Where("used = ? OR expires_at < ?", true, now).Delete(&models.PlatformLoginCode{}).Error; err != nil {
+		log.Printf("[sweep] 清理平台登录码失败: %v", err)
+	}
 }

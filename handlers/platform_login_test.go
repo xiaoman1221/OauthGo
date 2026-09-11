@@ -35,7 +35,7 @@ func TestOAuth2PlatformLoginFlow(t *testing.T) {
 	w2, _ := doPostForm(t, "/api/oauth2/platform-login", url.Values{
 		"ctx_id":   {ctxID},
 		"username": {user.Username},
-		"password": {"secret123"},
+		"password": {testUserPassword},
 	})
 	if w2.Code != http.StatusFound {
 		t.Fatalf("平台登录应 302: %d", w2.Code)

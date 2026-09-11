@@ -304,3 +304,31 @@ func Me(c *gin.Context) {
 	}
 	utils.Success(c, user)
 }
+
+// LoginCodeExchangeRequest 一次性登录码兑换请求
+type LoginCodeExchangeRequest struct {
+	Code string `json:"code" binding:"required"`
+}
+
+// LoginCodeExchange 用一次性 code 兑换平台 JWT。
+// 主站第三方登录 / Passkey 登录回跳 /oauth-callback?code=xxx 时由前端调用，
+// 使 JWT 不出现在跳转 URL 中（?token= 旧流程仍被回调页兼容支持）。
+// POST /api/auth/code-exchange  body: {"code": "..."}
+func LoginCodeExchange(c *gin.Context) {
+	var req LoginCodeExchangeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.FailBadRequest(c, "缺少 code 参数")
+		return
+	}
+	user, err := services.ExchangePlatformLoginCode(strings.TrimSpace(req.Code))
+	if err != nil {
+		utils.FailBadRequest(c, err.Error())
+		return
+	}
+	token, err := utils.GenerateToken(user.ID, user.Role)
+	if err != nil {
+		utils.FailInternal(c, "生成令牌失败")
+		return
+	}
+	utils.Success(c, gin.H{"token": token, "user": user})
+}

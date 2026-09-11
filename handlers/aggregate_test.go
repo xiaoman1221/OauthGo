@@ -43,12 +43,21 @@ func TestMain(m *testing.M) {
 
 const testTarget = "https://target.example.com/callback"
 
+// 测试夹具凭据：运行时随机生成，避免硬编码凭据字面量（断言均不依赖具体取值）
+var (
+	testProviderID   = "cid-" + utils.RandomString(8)
+	testProviderKey  = "sk-" + utils.RandomString(16)
+	testUserPassword = "pw-" + utils.RandomString(12)
+	testNewPassword  = "pw-" + utils.RandomString(12)
+	testBindPassword = "pw-" + utils.RandomString(12)
+)
+
 func enableTestProviders() {
 	for _, p := range []string{"gitee", "wechat"} {
 		database.DB.Model(&models.Provider{}).Where("name = ?", p).Updates(map[string]interface{}{
 			"enabled":       true,
-			"client_id":     "test-client",
-			"client_secret": "test-secret",
+			"client_id":     testProviderID,
+			"client_secret": testProviderKey,
 		})
 	}
 }
@@ -311,7 +320,7 @@ func TestAppCallbackRedirect(t *testing.T) {
 func testUser(t *testing.T) (models.User, string) {
 	t.Helper()
 	username := "u" + utils.RandomString(8)
-	hash, _ := utils.HashPassword("secret123")
+	hash, _ := utils.HashPassword(testUserPassword)
 	user := models.User{
 		Username: username, Nickname: username,
 		Password: hash, PasswordSet: true, Role: "user",
@@ -347,10 +356,10 @@ func seedBindCode(account, code string) {
 
 func TestUserCenter(t *testing.T) {
 	database.DB.Model(&models.Provider{}).Where("name = ?", "gitee").Updates(map[string]interface{}{
-		"enabled": true, "client_id": "test-client", "client_secret": "test-secret",
+		"enabled": true, "client_id": testProviderID, "client_secret": testProviderKey,
 	})
 	database.DB.Model(&models.Provider{}).Where("name = ?", "wechat").Updates(map[string]interface{}{
-		"enabled": true, "client_id": "test-client", "client_secret": "test-secret",
+		"enabled": true, "client_id": testProviderID, "client_secret": testProviderKey,
 	})
 	user, token := testUser(t)
 
@@ -389,18 +398,18 @@ func TestUserCenter(t *testing.T) {
 
 	t.Run("change password", func(t *testing.T) {
 		_, m := doAuthedJSON(t, http.MethodPut, "/api/auth/password",
-			`{"old_password":"wrong","new_password":"newpass123"}`, token)
+			fmt.Sprintf(`{"old_password":"wrong","new_password":"%s"}`, testNewPassword), token)
 		if !strings.Contains(m["message"].(string), "原密码错误") {
 			t.Fatalf("错误原密码应失败: %v", m)
 		}
 		_, m2 := doAuthedJSON(t, http.MethodPut, "/api/auth/password",
-			`{"old_password":"secret123","new_password":"newpass123"}`, token)
+			fmt.Sprintf(`{"old_password":"%s","new_password":"%s"}`, testUserPassword, testNewPassword), token)
 		if int(m2["code"].(float64)) != 0 {
 			t.Fatalf("修改密码失败: %v", m2)
 		}
 		var reloaded models.User
 		database.DB.First(&reloaded, user.ID)
-		if !utils.CheckPassword(reloaded.Password, "newpass123") {
+		if !utils.CheckPassword(reloaded.Password, testNewPassword) {
 			t.Fatalf("新密码未生效")
 		}
 	})
@@ -483,7 +492,7 @@ func TestUserCenter(t *testing.T) {
 			t.Fatalf("最后一个绑定应禁止解绑: %v", m3)
 		}
 		_, m4 := doAuthedJSON(t, http.MethodPut, "/api/auth/password",
-			`{"new_password":"setpass123"}`, oauthToken)
+			fmt.Sprintf(`{"new_password":"%s"}`, testBindPassword), oauthToken)
 		if int(m4["code"].(float64)) != 0 {
 			t.Fatalf("未设密用户设置密码失败: %v", m4)
 		}
@@ -659,7 +668,7 @@ func TestProviderManagement(t *testing.T) {
 
 	// 重置 gitee 渠道状态
 	database.DB.Model(&models.Provider{}).Where("name = ?", "gitee").Updates(map[string]interface{}{
-		"enabled": true, "main_site": true, "client_id": "test-client", "client_secret": "test-secret",
+		"enabled": true, "main_site": true, "client_id": testProviderID, "client_secret": testProviderKey,
 	})
 
 	t.Run("PublicProviders 仅返回主站渠道", func(t *testing.T) {
@@ -729,7 +738,7 @@ func TestProviderManagement(t *testing.T) {
 
 		// gitee 配置完整：返回可生成授权地址
 		code, m = doAuthedJSON(t, http.MethodPost, "/api/providers/gitee/test",
-			`{"client_id":"test-client","client_secret":"test-secret"}`, token)
+			fmt.Sprintf(`{"client_id":"%s","client_secret":"%s"}`, testProviderID, testProviderKey), token)
 		if code != 200 || int(m["code"].(float64)) != 0 {
 			t.Fatalf("gitee 配置有效应通过: %d %v", code, m)
 		}

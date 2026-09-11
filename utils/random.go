@@ -15,7 +15,9 @@ func RandomString(n int) string {
 	return hex.EncodeToString(b)[:n]
 }
 
-// MD5 计算字符串 MD5 值（小写十六进制）
+// MD5 计算字符串 MD5 值（小写十六进制）。
+// 注意：仅用于彩虹聚合登录协议 / REST 接口的服务端签名（ComputeSign）——
+// 该签名算法由彩虹协议规范固定为 MD5，属于兼容性要求，并非安全用途，不可更换算法。
 func MD5(s string) string {
 	sum := md5.Sum([]byte(s))
 	return hex.EncodeToString(sum[:])

@@ -2,13 +2,15 @@ openapi: 3.0.3
 info:
   title: OauthGo 第三方登录聚合接口
   description: |
-    为其他目标站点提供第三方登录聚合服务，包含两套协议：
+    为其他目标站点提供第三方登录聚合服务，包含三套协议：
 
     - **彩虹聚合登录协议**（`GET /api/connect.php`）：兼容彩虹聚合登录（u.cccyun.cc）的接入方式。
     - **REST 风格接口**（`/api/v1/oauth/*`）：自研 REST 接口，登录接口明文校验，信息接口使用服务端 MD5 签名校验。
+    - **OAuth2 / OIDC 授权服务器**（`/authorize` 等 issuer 根路径，`/api/oauth2/*` 为兼容别名）：
+      标准授权服务器协议（authorization code + PKCE + RS256 id_token + Discovery/JWKS）。
 
-    接入前请先在平台注册应用，获取 `appid` / `appkey`，并按需开启登录类型与回调域名白名单。
-  version: 1.0.0
+    接入前请先在平台注册应用，获取 `appid` / `appkey`，并按需开启登录类型与回调白名单。
+  version: 1.1.0
 servers:
   - url: http://localhost:8080
     description: 本地环境，请按实际部署地址替换
@@ -17,6 +19,10 @@ tags:
     description: 兼容彩虹聚合登录（u.cccyun.cc）的协议接口，统一返回 {code, msg, ...}
   - name: REST 接口
     description: 自研 REST 风格接口，统一返回 {code, message, data}
+  - name: OAuth2 / OIDC 授权服务器
+    description: 标准授权服务器端点（/api/oauth2/* 兼容别名）
+  - name: OAuth2 / OIDC 授权服务器（官方根路径）
+    description: 发布在 issuer（本站 HOST）根路径的官方端点，与 OIDC Discovery 一致
 paths:
   /api/oauth2/authorize:
     get:
@@ -46,7 +52,7 @@ paths:
           in: query
           required: false
           schema: { type: string }
-          description: 空格分隔（如 openid profile email offline_access）
+          description: 空格分隔（如 openid profile email phone）
         - name: state
           in: query
           required: true
@@ -63,6 +69,15 @@ paths:
           in: query
           required: false
           schema: { type: string, enum: [S256, plain] }
+        - name: prompt
+          in: query
+          required: false
+          schema: { type: string }
+          description: 含 none 时返回 login_required（本平台无静默授权会话）
+        - name: response_mode
+          in: query
+          required: false
+          schema: { type: string, enum: [query] }
         - name: type
           in: query
           required: false
@@ -173,7 +188,8 @@ paths:
         彩虹登录类型与渠道对应关系：`qq`→QQ、`wx`→微信、`alipay`→支付宝、`sina`→微博、
         `baidu`→百度、`douyin`→抖音、`dingtalk`→钉钉、`gitee`→Gitee、`wework`→企业微信。
 
-        登录完成后平台会 302 跳回 `redirect_uri`，携带 `type`、`code` 参数。
+        登录完成后平台会 302 跳回 `redirect_uri`，携带 `type`、`code`、`sign` 参数
+        （`sign` 覆盖 type+code，可服务端二次校验）。
       parameters:
         - name: act
           in: query
@@ -506,13 +522,28 @@ paths:
       description: 公开接口，无需鉴权，用于在登录页渲染可用的第三方登录按钮。
       responses:
         '200':
-          description: 渠道列表
+          description: 渠道列表（统一 {code, message, data} 包装）
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/ProviderInfo'
+                allOf:
+                  - $ref: '#/components/schemas/RestResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/ProviderInfo'
+              examples:
+                success:
+                  summary: 成功
+                  value:
+                    code: 0
+                    message: success
+                    data:
+                      - name: gitee
+                        display_name: Gitee
+                        category: social
   /authorize:
     get:
       tags:
@@ -586,6 +617,8 @@ paths:
                 code_verifier: { type: string }
                 refresh_token: { type: string }
                 redirect_uri: { type: string }
+                client_id: { type: string }
+                client_secret: { type: string }
       security:
         - oauth2ClientAuth: []
       responses:
@@ -685,8 +718,6 @@ components:
       type: http
       scheme: basic
       description: HTTP Basic（client_id/client_secret）或表单 client_id+client_secret
-  schemas:
-components:
   schemas:
     OAuthTokenResponse:
       type: object

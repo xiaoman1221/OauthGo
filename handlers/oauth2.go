@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -19,6 +20,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 )
+
+// oauth2SecretEqual 恒定时间比较 client_secret / appkey，避免时序侧信道
+func oauth2SecretEqual(a, b string) bool {
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+}
 
 // ---------- 授权端点 ----------
 
@@ -240,15 +246,14 @@ func oauth2ErrorHTML(c *gin.Context, status int, code, desc string) {
 
 // oauth2ErrorRedirect 在 redirect_uri 可信时按 RFC 6749 以 query 参数回传错误
 func oauth2ErrorRedirect(c *gin.Context, redirectURI, state, code, desc string) {
-	q := url.Values{}
-	q.Set("error", code)
+	params := map[string]string{"error": code}
 	if desc != "" {
-		q.Set("error_description", desc)
+		params["error_description"] = desc
 	}
 	if state != "" {
-		q.Set("state", state)
+		params["state"] = state
 	}
-	c.Redirect(http.StatusFound, redirectURI+"?"+q.Encode())
+	c.Redirect(http.StatusFound, buildRedirectURL(redirectURI, params))
 }
 
 // ---------- 渠道授权回调 ----------
@@ -277,8 +282,12 @@ func handleOAuthCallback(c *gin.Context, ctx services.OAuthCtx, providerName, pr
 		redirectErr("登录失败：" + err.Error())
 		return
 	}
-	// 记录登录日志
-	_ = services.RecordLogin(0, "", models.LoginRecord{
+	// 记录登录日志（记录到应用名下，供应用归属者在「登录管理」查看）
+	appID, appName := uint(0), ""
+	if appRec, appErr := services.GetAppByID(ctx.ClientID); appErr == nil {
+		appID, appName = appRec.ID, appRec.Name
+	}
+	_ = services.RecordLogin(appID, appName, models.LoginRecord{
 		OpenID:    info.OpenID,
 		Nickname:  info.Nickname,
 		Avatar:    info.Avatar,
@@ -294,6 +303,7 @@ func handleOAuthCallback(c *gin.Context, ctx services.OAuthCtx, providerName, pr
 		UserID:        user.ID,
 		Scope:         ctx.Scope,
 		RedirectURI:   ctx.RedirectURI,
+		Nonce:         ctx.Nonce,
 		PKCEChallenge: ctx.PKCEChallenge,
 		PKCEMethod:    ctx.PKCEMethod,
 		ExpiresAt:     time.Now().Add(services.OAuthCodeTTL),
@@ -303,12 +313,11 @@ func handleOAuthCallback(c *gin.Context, ctx services.OAuthCtx, providerName, pr
 		return
 	}
 
-	q := url.Values{}
-	q.Set("code", code.Code)
+	params := map[string]string{"code": code.Code}
 	if ctx.State != "" {
-		q.Set("state", ctx.State)
+		params["state"] = ctx.State
 	}
-	c.Redirect(http.StatusFound, ctx.RedirectURI+"?"+q.Encode())
+	c.Redirect(http.StatusFound, buildRedirectURL(ctx.RedirectURI, params))
 }
 
 // ---------- Token 端点 ----------
@@ -326,7 +335,7 @@ func TokenOAuth2(c *gin.Context) {
 		return
 	}
 	app, err := services.GetAppByID(clientID)
-	if err != nil || app.AppKey != clientSecret {
+	if err != nil || !oauth2SecretEqual(app.AppKey, clientSecret) {
 		oauth2TokenError(c, http.StatusUnauthorized, "invalid_client", "客户端认证失败")
 		return
 	}
@@ -404,7 +413,7 @@ func oauth2TokenByCode(c *gin.Context, app *models.App) {
 		oauth2TokenError(c, http.StatusBadRequest, "invalid_grant", "授权码已使用")
 		return
 	}
-	issueOAuth2Tokens(c, app, code.UserID, code.Scope)
+	issueOAuth2Tokens(c, app, code.UserID, code.Scope, code.Nonce)
 }
 
 func oauth2VerifyPKCE(method, challenge, verifier string) bool {
@@ -441,11 +450,12 @@ func oauth2TokenByRefresh(c *gin.Context, app *models.App) {
 		oauth2TokenError(c, http.StatusBadRequest, "invalid_grant", "refresh_token 已失效")
 		return
 	}
-	issueOAuth2Tokens(c, app, rt.UserID, rt.Scope)
+	// refresh 签发的 id_token 不携带 nonce（nonce 仅属于原始授权请求）
+	issueOAuth2Tokens(c, app, rt.UserID, rt.Scope, "")
 }
 
 // issueOAuth2Tokens 为授权用户签发 access / refresh / id_token
-func issueOAuth2Tokens(c *gin.Context, app *models.App, userID uint, scope string) {
+func issueOAuth2Tokens(c *gin.Context, app *models.App, userID uint, scope, nonce string) {
 	at := models.OAuthAccessToken{
 		Token:     utils.RandomString(48),
 		ClientID:  app.AppID,
@@ -483,7 +493,7 @@ func issueOAuth2Tokens(c *gin.Context, app *models.App, userID uint, scope strin
 	}
 	// id_token：scope 含 openid 时签发 RS256 JWT
 	if strings.Contains(scope, "openid") {
-		idToken, err := signOAuthIDToken(app.AppID, userID, scope, "")
+		idToken, err := signOAuthIDToken(app.AppID, userID, scope, nonce)
 		if err == nil {
 			resp["id_token"] = idToken
 		}
@@ -683,7 +693,7 @@ func OAuth2Revoke(c *gin.Context) {
 		return
 	}
 	app, err := services.GetAppByID(clientID)
-	if err != nil || app.AppKey != clientSecret {
+	if err != nil || !oauth2SecretEqual(app.AppKey, clientSecret) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_client", "error_description": "客户端认证失败"})
 		return
 	}
@@ -717,7 +727,7 @@ func OAuth2Introspect(c *gin.Context) {
 		return
 	}
 	app, err := services.GetAppByID(clientID)
-	if err != nil || app.AppKey != clientSecret {
+	if err != nil || !oauth2SecretEqual(app.AppKey, clientSecret) {
 		oauth2TokenError(c, http.StatusUnauthorized, "invalid_client", "客户端认证失败")
 		return
 	}
@@ -863,6 +873,7 @@ func OAuth2PlatformLogin(c *gin.Context) {
 		UserID:        user.ID,
 		Scope:         ctx.Scope,
 		RedirectURI:   ctx.RedirectURI,
+		Nonce:         ctx.Nonce,
 		PKCEChallenge: ctx.PKCEChallenge,
 		PKCEMethod:    ctx.PKCEMethod,
 		ExpiresAt:     time.Now().Add(services.OAuthCodeTTL),
@@ -872,7 +883,7 @@ func OAuth2PlatformLogin(c *gin.Context) {
 		return
 	}
 	// 审计：平台账号授权（IDP/CAS）登录记录
-	_ = services.RecordLogin(0, "", models.LoginRecord{
+	_ = services.RecordLogin(app.ID, app.Name, models.LoginRecord{
 		Username:  user.Username,
 		Nickname:  user.Nickname,
 		Avatar:    user.Avatar,
@@ -882,12 +893,11 @@ func OAuth2PlatformLogin(c *gin.Context) {
 		Status:    1,
 	})
 
-	q := url.Values{}
-	q.Set("code", code.Code)
+	params := map[string]string{"code": code.Code}
 	if ctx.State != "" {
-		q.Set("state", ctx.State)
+		params["state"] = ctx.State
 	}
-	c.Redirect(http.StatusFound, ctx.RedirectURI+"?"+q.Encode())
+	c.Redirect(http.StatusFound, buildRedirectURL(ctx.RedirectURI, params))
 }
 
 // findUserByAccount 按用户名/邮箱/手机号查找平台账号

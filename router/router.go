@@ -102,6 +102,8 @@ func Setup() *gin.Engine {
 			auth.POST("/login", handlers.Login)
 			auth.POST("/send-code", handlers.SendCode)
 			auth.POST("/forgot", handlers.ForgotPassword)
+			// 一次性登录码兑换 JWT（/oauth-callback?code= 回跳后调用，免认证）
+			auth.POST("/code-exchange", handlers.LoginCodeExchange)
 			auth.GET("/me", middleware.JWT(), handlers.Me)
 
 			// Passkey / WebAuthn
@@ -213,11 +215,13 @@ func Setup() *gin.Engine {
 	return r
 }
 
-// securityHeaders 基础安全响应头：防嗅探 / 防点击劫持 iframe / 收紧 referrer
+// securityHeaders 基础安全响应头：防嗅探 / 防点击劫持 iframe / 收紧 referrer。
+// X-Frame-Options 用 SAMEORIGIN：控制台页面不允许被第三方站点嵌入，
+// 但需允许本站前端「服务文档」页以同源 iframe 内嵌 /docs。
 func securityHeaders() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("X-Content-Type-Options", "nosniff")
-		c.Header("X-Frame-Options", "DENY")
+		c.Header("X-Frame-Options", "SAMEORIGIN")
 		c.Header("Referrer-Policy", "no-referrer")
 		c.Next()
 	}
@@ -243,7 +247,13 @@ func serveFrontend(r *gin.Engine) {
 	r.StaticFile("/favicon.ico", filepath.Join(dist, "favicon.ico"))
 	r.StaticFile("/favicon.svg", filepath.Join(dist, "favicon.svg"))
 	r.NoRoute(func(c *gin.Context) {
-		if c.Request.Method == http.MethodGet {
+		// API 命名空间一律返回 404 JSON，避免误回前端页面
+		if p := c.Request.URL.Path; p == "/api" || strings.HasPrefix(p, "/api/") {
+			c.JSON(404, gin.H{"code": 404, "message": "not found"})
+			return
+		}
+		// GET/HEAD 均回退前端入口（http.ServeFile 对 HEAD 自动省略响应体）
+		if m := c.Request.Method; m == http.MethodGet || m == http.MethodHead {
 			c.File(filepath.Join(dist, "index.html"))
 			return
 		}

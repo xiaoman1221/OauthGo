@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"os"
-	"path/filepath"
 	"strconv"
 
 	"OauthGo/database"
@@ -201,14 +200,41 @@ func BatchDeleteLoginRecords(c *gin.Context) {
 	utils.SuccessMsg(c, "批量删除成功")
 }
 
-// serveEmptyLoginCSV 导出空 CSV（无权限/无数据时使用）
-func serveEmptyLoginCSV(c *gin.Context) {
-	tmpPath := filepath.Join(os.TempDir(), "login_records.csv")
-	_ = utils.ExportLoginRecordsToCSV(tmpPath, nil)
+// newLoginCSVTempFile 创建唯一的临时 CSV 文件（并发导出互不干扰）
+func newLoginCSVTempFile() (string, error) {
+	tmp, err := os.CreateTemp("", "login_records-*.csv")
+	if err != nil {
+		return "", err
+	}
+	path := tmp.Name()
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(path)
+		return "", err
+	}
+	return path, nil
+}
+
+// serveLoginCSV 将登录记录导出为 CSV 并作为附件返回
+func serveLoginCSV(c *gin.Context, records []models.LoginRecord) {
+	tmpPath, err := newLoginCSVTempFile()
+	if err != nil {
+		utils.FailInternal(c, "导出失败")
+		return
+	}
 	defer os.Remove(tmpPath)
+
+	if err := utils.ExportLoginRecordsToCSV(tmpPath, records); err != nil {
+		utils.FailInternal(c, "导出失败")
+		return
+	}
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 	c.Header("Content-Disposition", "attachment; filename=login_records.csv")
 	c.File(tmpPath)
+}
+
+// serveEmptyLoginCSV 导出空 CSV（无权限/无数据时使用）
+func serveEmptyLoginCSV(c *gin.Context) {
+	serveLoginCSV(c, nil)
 }
 
 // ExportLoginRecords CSV 导出登录记录
@@ -248,15 +274,5 @@ func ExportLoginRecords(c *gin.Context) {
 
 	var records []models.LoginRecord
 	query.Order("id desc").Find(&records)
-
-	tmpPath := filepath.Join(os.TempDir(), "login_records.csv")
-	if err := utils.ExportLoginRecordsToCSV(tmpPath, records); err != nil {
-		utils.FailInternal(c, "导出失败")
-		return
-	}
-	defer os.Remove(tmpPath)
-
-	c.Header("Content-Type", "text/csv; charset=utf-8")
-	c.Header("Content-Disposition", "attachment; filename=login_records.csv")
-	c.File(tmpPath)
+	serveLoginCSV(c, records)
 }

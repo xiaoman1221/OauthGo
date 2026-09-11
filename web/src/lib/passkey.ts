@@ -94,6 +94,8 @@ export function serializeAttestation(cred: PublicKeyCredential): PasskeyResponse
 
 export interface PasskeyLoginResult {
   token: string
+  /** 一次性登录码：优先用它回跳 /oauth-callback?code= 兑换 JWT，避免 token 进入 URL */
+  code?: string
   user: Record<string, unknown>
 }
 
@@ -115,7 +117,12 @@ export async function passkeyLogin(username: string): Promise<void> {
     body
   )
   const data = fin.data.data
-  if (!data || !data.token) throw new Error('Passkey 登录未返回令牌')
+  if (!data || !(data.code || data.token)) throw new Error('Passkey 登录未返回凭据')
+  // 优先一次性 code 回跳（JWT 不进入浏览器历史）；旧后端无 code 时回退 token
+  if (data.code) {
+    window.location.href = '/oauth-callback?code=' + encodeURIComponent(data.code)
+    return
+  }
   localStorage.setItem('token', data.token)
   window.location.href = '/oauth-callback?token=' + encodeURIComponent(data.token)
 }
