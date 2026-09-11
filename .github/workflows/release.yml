@@ -1,8 +1,13 @@
 name: Release
 
-# 触发方式（满足其一即可）：
-#   1. 推送形如 v1.0.0 的标签：git tag v1.0.0 && git push github v1.0.0
+# 触发方式（满足其一即可，GitHub 与私有环境（Forgejo/Gitea）行为一致）：
+#   1. 推送形如 v1.0.0 的标签
 #   2. 推送 master 分支且提交信息包含版本号（如 "release：v1.0.0"）
+#
+# 双环境自适应（按 github.server_url 区分）：
+#   - GitHub（https://github.com）：创建 GitHub Release + 推送 GHCR / Docker Hub 镜像
+#   - 私有环境（其它 server_url）：跳过 Docker 发布，改为调用 Forgejo/Gitea
+#     原生 Release API 发布同版本 Tag 的构建产物（Tag 与 GitHub 保持一致）
 on:
   push:
     branches:
@@ -15,7 +20,7 @@ permissions:
   packages: write
 
 jobs:
-  # 解析版本号：标签优先，否则从提交信息中匹配 vX.Y.Z
+  # 1. 解析版本号（两边都跑）
   resolve-version:
     runs-on: ubuntu-latest
     outputs:
@@ -38,7 +43,7 @@ jobs:
             echo "未检测到版本号，跳过发布"
           fi
 
-  # 构建前端产物（web/dist），供各平台编译复用
+  # 2. 构建前端产物（两边都跑）
   frontend:
     needs: resolve-version
     if: needs.resolve-version.outputs.version != ''
@@ -48,8 +53,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: web/package-lock.json
+          # 智能缓存：只有 GitHub 官方运行时才开启 npm 缓存，私有 runner 自动跳过防止报错
+          cache: ${{ github.server_url == 'https://github.com' && 'npm' || '' }}
       - name: Install dependencies
         run: npm ci
         working-directory: web
@@ -61,7 +66,7 @@ jobs:
           name: frontend-dist
           path: web/dist
 
-  # 交叉编译主流系统（Windows / Linux / macOS，amd64 + arm64）
+  # 3. 交叉编译主流系统（两边都跑）
   build:
     needs: [resolve-version, frontend]
     if: needs.resolve-version.outputs.version != ''
@@ -97,8 +102,15 @@ jobs:
           mkdir -p _pkg/web release
           cp oauthgo${{ matrix.ext }} _pkg/
           cp -r web/dist _pkg/web/dist
+          # 兼容私有 runner（docker 容器常以 root 运行、无 sudo）
+          if ! command -v zip >/dev/null 2>&1; then
+            if command -v sudo >/dev/null 2>&1; then
+              sudo apt-get update -qq >/dev/null 2>&1 && sudo apt-get install -y -qq zip >/dev/null 2>&1
+            else
+              apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq zip >/dev/null 2>&1
+            fi
+          fi
           if [[ "${{ matrix.os }}" == "windows" ]]; then
-            sudo apt-get update -qq >/dev/null 2>&1 && sudo apt-get install -y -qq zip >/dev/null 2>&1
             (cd _pkg && zip -qr ../release/oauthgo-${{ matrix.os }}-${{ matrix.arch }}.zip oauthgo.exe web)
           else
             tar -czf release/oauthgo-${{ matrix.os }}-${{ matrix.arch }}.tar.gz -C _pkg oauthgo web
@@ -109,17 +121,21 @@ jobs:
           name: oauthgo-${{ matrix.os }}-${{ matrix.arch }}
           path: release/*
 
-  # 创建 GitHub Release 并附上所有平台的编译产物
+  # 4. 智能发布阶段：两边都跑，按平台调用各自的发布方式
   release:
     needs: [build, resolve-version]
     if: needs.resolve-version.outputs.version != ''
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           pattern: oauthgo-*
           merge-multiple: true
+
+      # 🟢 GitHub：官方 softprops 组件创建 Release（Tag 不存在时自动创建）
       - name: Create GitHub Release
+        if: github.server_url == 'https://github.com'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.resolve-version.outputs.version }}
@@ -127,10 +143,49 @@ jobs:
           files: oauthgo-*
           generate_release_notes: true
 
-  # 构建多架构 Docker 镜像，发布到 GitHub Container Registry 与 Docker Hub
+      # 🟢 私有环境（Forgejo / Gitea）：直接调用原生 Release API 发布。
+      #    使用 curl 而非第三方 Action，避免外部 Action 可用性问题；
+      #    Tag 名与 GitHub 侧一致（同为 vX.Y.Z），已存在同名 Release 时先删后建保证幂等。
+      - name: Create Forgejo/Gitea Release
+        if: github.server_url != 'https://github.com'
+        env:
+          API: ${{ github.api_url }}            # 私有实例形如 https://git.example.com/api/v1
+          REPO: ${{ github.repository }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}    # Forgejo/Gitea 自动注入的 Actions Token
+          VERSION: ${{ needs.resolve-version.outputs.version }}
+        run: |
+          set -e
+          AUTH="Authorization: token ${TOKEN}"
+
+          # 同名 Tag 的 Release 已存在（重复运行）则先删除，保证产物与 Tag 一致
+          code=$(curl -s -o /tmp/rel.json -w '%{http_code}' \
+            -H "$AUTH" "${API}/repos/${REPO}/releases/tags/${VERSION}")
+          if [[ "$code" == "200" ]]; then
+            rel_id=$(grep -oE '"id":[0-9]+' /tmp/rel.json | head -n1 | grep -oE '[0-9]+')
+            echo "已存在 Release #${rel_id}，删除后重建"
+            curl -sf -X DELETE -H "$AUTH" "${API}/repos/${REPO}/releases/${rel_id}"
+          fi
+
+          # 创建 Release（Tag 不存在时默认指向默认分支，与 GitHub 侧行为一致）
+          release_id=$(curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" \
+            -d "{\"tag_name\":\"${VERSION}\",\"name\":\"${VERSION}\",\"body\":\"OauthGo ${VERSION}\",\"draft\":false,\"prerelease\":false}" \
+            "${API}/repos/${REPO}/releases" \
+            | grep -oE '"id":[0-9]+' | head -n1 | grep -oE '[0-9]+')
+          echo "Release #${release_id} 创建成功"
+
+          # 上传全部构建产物
+          for f in oauthgo-*; do
+            echo "上传附件：${f}"
+            curl -sf -X POST -H "$AUTH" -H "Content-Type: application/octet-stream" \
+              --data-binary @"${f}" \
+              "${API}/repos/${REPO}/releases/${release_id}/assets?name=$(basename "${f}")" >/dev/null
+          done
+          echo "私有环境 Release 发布完成：${VERSION}"
+
+  # 5. 🐳 Docker 构建与镜像推送（仅 GitHub 官方环境执行，私有环境跳过）
   docker:
     needs: resolve-version
-    if: needs.resolve-version.outputs.version != ''
+    if: needs.resolve-version.outputs.version != '' && github.server_url == 'https://github.com'
     runs-on: ubuntu-latest
     env:
       DH_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
