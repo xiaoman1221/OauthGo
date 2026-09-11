@@ -100,10 +100,11 @@ export interface PasskeyLoginResult {
 }
 
 export async function passkeyLogin(username: string): Promise<void> {
-  const begin = await http.get<{ code: number; data: PasskeyOption }>('/auth/passkey/login/begin', {
+  // 响应拦截器已把结果解包为响应体 {code, message, data}，此处 .data 即业务数据
+  const begin = await http.get<PasskeyOption>('/auth/passkey/login/begin', {
     params: { username }
   })
-  const opt = begin.data.data
+  const opt = begin.data
   if (!opt || !opt.options) throw new Error('获取 Passkey 登录挑战失败')
 
   const cred = (await navigator.credentials.get({
@@ -112,11 +113,11 @@ export async function passkeyLogin(username: string): Promise<void> {
   if (!cred) throw new Error('已取消 Passkey 认证')
 
   const body = serializeAssertion(cred)
-  const fin = await http.post<{ code: number; data: PasskeyLoginResult }>(
+  const fin = await http.post<PasskeyLoginResult>(
     `/auth/passkey/login/finish?session_id=${encodeURIComponent(opt.session_id)}`,
     body
   )
-  const data = fin.data.data
+  const data = fin.data
   if (!data || !(data.code || data.token)) throw new Error('Passkey 登录未返回凭据')
   // 优先一次性 code 回跳（JWT 不进入浏览器历史）；旧后端无 code 时回退 token
   if (data.code) {
@@ -129,8 +130,9 @@ export async function passkeyLogin(username: string): Promise<void> {
 
 // 完整注册流程（调用方需已登录）
 export async function startPasskeyRegistration(name: string): Promise<void> {
-  const res = await http.post<{ code: number; data: PasskeyOption }>('/auth/passkey/register/begin', {})
-  const opt = res.data.data
+  // 响应拦截器已把结果解包为响应体 {code, message, data}，此处 .data 即业务数据
+  const res = await http.post<PasskeyOption>('/auth/passkey/register/begin', {})
+  const opt = res.data
   if (!opt || !opt.options) throw new Error('获取注册挑战失败')
   const cred = (await navigator.credentials.create({
     publicKey: prepareCreationOptions(opt.options as AnyRecord)
