@@ -493,7 +493,7 @@ func issueOAuth2Tokens(c *gin.Context, app *models.App, userID uint, scope, nonc
 	}
 	// id_token：scope 含 openid 时签发 RS256 JWT
 	if strings.Contains(scope, "openid") {
-		idToken, err := signOAuthIDToken(app.AppID, userID, scope, nonce)
+		idToken, err := signOAuthIDToken(app.AppID, userID, nonce)
 		if err == nil {
 			resp["id_token"] = idToken
 		}
@@ -516,7 +516,7 @@ func oauth2TokenError(c *gin.Context, status int, code, desc string) {
 // ---------- id_token / JWKS / Discovery ----------
 
 // signOAuthIDToken 签发 OIDC id_token（RS256，issuer=HOST）
-func signOAuthIDToken(clientID string, userID uint, scope, nonce string) (string, error) {
+func signOAuthIDToken(clientID string, userID uint, nonce string) (string, error) {
 	key, err := services.EnsureOAuthSigningKey()
 	if err != nil {
 		return "", err

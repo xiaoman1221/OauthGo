@@ -27,17 +27,17 @@ var testEngine *gin.Engine
 
 func TestMain(m *testing.M) {
 	db := filepath.Join(os.TempDir(), "oauthgo-aggregate-test.db")
-	os.Remove(db)
-	os.Setenv("DB_PATH", db)
-	os.Setenv("PORT", "18081")
-	os.Setenv("HOST", "http://localhost:18081")
-	os.Setenv("JWT_KEY", "test")
+	_ = os.Remove(db)
+	_ = os.Setenv("DB_PATH", db)
+	_ = os.Setenv("PORT", "18081")
+	_ = os.Setenv("HOST", "http://localhost:18081")
+	_ = os.Setenv("JWT_KEY", "test")
 	config.Load()
 	database.Init()
 	services.InitSettings()
 	testEngine = router.Setup()
 	code := m.Run()
-	os.Remove(db)
+	_ = os.Remove(db)
 	os.Exit(code)
 }
 
@@ -484,7 +484,9 @@ func TestUserCenter(t *testing.T) {
 			Username: "o_" + utils.RandomString(8), Nickname: "第三方用户",
 			Password: "x", PasswordSet: false, Role: "user",
 		}
-		database.DB.Create(&oauthUser)
+		if err := database.DB.Create(&oauthUser).Error; err != nil {
+			t.Fatalf("创建第三方用户失败: %v", err)
+		}
 		services.BindProviderAccount(oauthUser.ID, "wechat", &providers.UserInfo{OpenID: "w-" + utils.RandomString(6)})
 		oauthToken, _ := utils.GenerateToken(oauthUser.ID, oauthUser.Role)
 		_, m3 := doAuthedJSON(t, http.MethodDelete, "/api/auth/bind/wechat", "", oauthToken)

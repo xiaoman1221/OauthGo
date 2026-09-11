@@ -19,8 +19,7 @@ export function md5(input: string): string {
     return output
   }
 
-  const utf8 = unescape(encodeURIComponent(input))
-  let message = utf8
+  const message = unescape(encodeURIComponent(input))
   let messageLength = message.length
 
   const blockLength = ((messageLength + 8) >> 6) + 1

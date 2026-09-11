@@ -72,6 +72,7 @@ func backfillAppDomains() {
 		RedirectURL string
 		CallbackURL string
 	}
+	//noinspection SqlDialectInspection
 	if err := DB.Raw("SELECT id, redirect_url, callback_url FROM apps").Scan(&rows).Error; err != nil {
 		return // 旧列不存在，跳过
 	}

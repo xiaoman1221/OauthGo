@@ -221,7 +221,7 @@ func serveLoginCSV(c *gin.Context, records []models.LoginRecord) {
 		utils.FailInternal(c, "导出失败")
 		return
 	}
-	defer os.Remove(tmpPath)
+	defer func() { _ = os.Remove(tmpPath) }()
 
 	if err := utils.ExportLoginRecordsToCSV(tmpPath, records); err != nil {
 		utils.FailInternal(c, "导出失败")
