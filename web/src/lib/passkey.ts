@@ -27,7 +27,8 @@ type AnyRecord = Record<string, any>
 
 // 注册选项：challenge / user.id / excludeCredentials[].id 转字节
 export function prepareCreationOptions(options: AnyRecord): PublicKeyCredentialCreationOptions {
-  const o = JSON.parse(JSON.stringify(options)) as AnyRecord
+  // go-webauthn 返回 {publicKey:{...}} 包裹层，需先剥出真实选项再交给浏览器
+  const o = JSON.parse(JSON.stringify(options.publicKey ?? options)) as AnyRecord
   if (o.challenge) o.challenge = b64ToBuf(o.challenge)
   if (o.user && o.user.id) o.user.id = b64ToBuf(o.user.id)
   if (Array.isArray(o.excludeCredentials)) {
@@ -38,7 +39,8 @@ export function prepareCreationOptions(options: AnyRecord): PublicKeyCredentialC
 
 // 断言选项：challenge / allowCredentials[].id 转字节
 export function prepareRequestOptions(options: AnyRecord): PublicKeyCredentialRequestOptions {
-  const o = JSON.parse(JSON.stringify(options)) as AnyRecord
+  // 同上：剥掉 go-webauthn 的 {publicKey:{...}} 包裹层
+  const o = JSON.parse(JSON.stringify(options.publicKey ?? options)) as AnyRecord
   if (o.challenge) o.challenge = b64ToBuf(o.challenge)
   if (Array.isArray(o.allowCredentials)) {
     o.allowCredentials = o.allowCredentials.map((c: AnyRecord) => ({ ...c, id: b64ToBuf(c.id as string) }))
