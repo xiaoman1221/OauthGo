@@ -159,6 +159,8 @@ func Login(c *gin.Context) {
 		utils.FailInternal(c, "生成令牌失败")
 		return
 	}
+	// 同步建立 OIDC 登录会话（授权页免重复登录）
+	establishSession(c, user.ID)
 	utils.Success(c, gin.H{"token": token, "user": user})
 }
 

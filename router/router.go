@@ -65,6 +65,8 @@ func Setup() *gin.Engine {
 			oauth2.POST("/revoke", handlers.OAuth2Revoke)
 			oauth2.POST("/introspect", handlers.OAuth2Introspect)
 			oauth2.POST("/platform-login", handlers.OAuth2PlatformLogin)
+			// 已登录用户一键确认授权（会话 Cookie 即凭据）
+			oauth2.POST("/consent", handlers.OAuth2Consent)
 			oauth2.GET("/.well-known/openid-configuration", handlers.OAuth2Discovery)
 			oauth2.GET("/.well-known/oauth-authorization-server", handlers.OAuth2Discovery)
 		}
@@ -104,6 +106,10 @@ func Setup() *gin.Engine {
 			auth.POST("/forgot", handlers.ForgotPassword)
 			// 一次性登录码兑换 JWT（/oauth-callback?code= 回跳后调用，免认证）
 			auth.POST("/code-exchange", handlers.LoginCodeExchange)
+			// OIDC 登录会话：退出与在线会话管理（logout 以会话 Cookie 为凭据，无需 JWT）
+			auth.POST("/logout", handlers.Logout)
+			auth.GET("/sessions", middleware.JWT(), handlers.ListSessions)
+			auth.DELETE("/sessions/:id", middleware.JWT(), handlers.RevokeSession)
 			auth.GET("/me", middleware.JWT(), handlers.Me)
 
 			// Passkey / WebAuthn
@@ -197,6 +203,8 @@ func Setup() *gin.Engine {
 		oauth2Root.GET("/jwks", handlers.OAuth2JWKS)
 		oauth2Root.POST("/revoke", handlers.OAuth2Revoke)
 		oauth2Root.POST("/introspect", handlers.OAuth2Introspect)
+		oauth2Root.POST("/platform-login", handlers.OAuth2PlatformLogin)
+		oauth2Root.POST("/consent", handlers.OAuth2Consent)
 		oauth2Root.GET("/.well-known/openid-configuration", handlers.OAuth2Discovery)
 		oauth2Root.GET("/.well-known/oauth-authorization-server", handlers.OAuth2Discovery)
 	}

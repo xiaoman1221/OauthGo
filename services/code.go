@@ -115,8 +115,13 @@ func ChangePassword(userID uint, newPassword string) error {
 	if err != nil {
 		return err
 	}
-	return database.DB.Model(&user).Updates(map[string]interface{}{
+	if err := database.DB.Model(&user).Updates(map[string]interface{}{
 		"password":     hash,
 		"password_set": true,
-	}).Error
+	}).Error; err != nil {
+		return err
+	}
+	// 密码变更后吊销该用户全部登录会话，强制重新登录
+	DeleteUserSessions(userID)
+	return nil
 }

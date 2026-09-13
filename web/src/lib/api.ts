@@ -124,6 +124,16 @@ export interface Binding {
   avatar?: string
 }
 
+export interface UserSessionInfo {
+  id: string
+  ip: string
+  user_agent: string
+  created_at: string
+  last_used_at: string
+  expires_at: string
+  current: boolean
+}
+
 async function get<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
   const res = await http.get(url, config)
   return (res as unknown as { data: T }).data
@@ -156,6 +166,10 @@ export const authApi = {
   // 一次性登录码兑换 JWT（/oauth-callback?code= 回跳后调用）
   exchangeLoginCode: (code: string) =>
     post<{ token: string; user: User }>('/auth/code-exchange', { code }),
+  // OIDC 登录会话：退出与在线会话管理
+  logout: () => post<unknown>('/auth/logout'),
+  sessions: () => get<{ list: UserSessionInfo[] }>('/auth/sessions'),
+  revokeSession: (id: string) => del<unknown>(`/auth/sessions/${id}`),
   me: () => get<User>('/auth/me'),
   updateProfile: (data: Record<string, unknown>) => put<User>('/auth/me', data),
   changePassword: (data: { old_password?: string; new_password: string }) =>

@@ -79,11 +79,13 @@ func AuthorizeOAuth2(c *gin.Context) {
 		oauth2ErrorRedirect(c, redirectURI, state, "unsupported_response_mode", "仅支持 response_mode=query")
 		return
 	}
-	// prompt：本平台无静默授权会话，prompt=none 一律返回 login_required（OIDC Core §3.1.2.1）
+	// prompt=none：本平台授权采用「每次一键确认」，无静默发码，一律返回 login_required（OIDC Core §3.1.2.1）
 	if strings.Contains(q.Get("prompt"), "none") {
 		oauth2ErrorRedirect(c, redirectURI, state, "login_required", "无法静默授权，需要用户登录")
 		return
 	}
+	// prompt=login：忽略已有登录会话，强制展示登录表单（用于「切换账号」）
+	forceLogin := strings.Contains(q.Get("prompt"), "login")
 
 	// 校验 PKCE 参数
 	if challenge != "" {
@@ -123,10 +125,19 @@ func AuthorizeOAuth2(c *gin.Context) {
 	}
 	ctxID := services.CreateOAuthCtx(ctx)
 
-	// 未指定渠道 → 返回授权选择页（列出该应用启用的渠道）
+	// 未指定渠道 → 返回授权选择页；已有登录会话时展示「一键继续」
+	var sessionUser *models.User
+	if !forceLogin {
+		if sess := sessionFromCookie(c); sess != nil {
+			var u models.User
+			if err := database.DB.First(&u, sess.UserID).Error; err == nil {
+				sessionUser = &u
+			}
+		}
+	}
 	if providerName == "" {
 		c.Header("Content-Type", "text/html; charset=utf-8")
-		c.String(http.StatusOK, oauth2ConsentPage(c, app, ctxID))
+		c.String(http.StatusOK, oauth2ConsentPage(c, app, ctxID, sessionUser, forceLogin))
 		return
 	}
 
@@ -146,7 +157,11 @@ func AuthorizeOAuth2(c *gin.Context) {
 // oauth2ConsentPage 生成 OAuth2 授权选择页 HTML。
 // 除列出应用启用的第三方渠道外，还提供「平台账号登录」（密码 / Passkey），
 // 使本平台可作为 IDP / CAS：平台账号登录成功后即签发 OIDC 授权码回跳目标站点。
-func oauth2ConsentPage(c *gin.Context, app *models.App, ctxID string) string {
+// sessionUser 非空表示浏览器已有登录会话：直接展示「一键继续」+ 账号切换入口。
+func oauth2ConsentPage(c *gin.Context, app *models.App, ctxID string, sessionUser *models.User, forceLogin bool) string {
+	base := c.Request.URL.Path + "?" + c.Request.URL.RawQuery
+	switchURL := base + "&prompt=login"
+
 	var types []string
 	_ = json.Unmarshal([]byte(app.Types), &types)
 
@@ -170,7 +185,6 @@ func oauth2ConsentPage(c *gin.Context, app *models.App, ctxID string) string {
 		opts = append(opts, opt{Name: resolved, DisplayName: meta.DisplayName})
 	}
 
-	base := c.Request.URL.Path + "?" + c.Request.URL.RawQuery
 	var b strings.Builder
 	b.WriteString("<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">")
 	b.WriteString("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">")
@@ -184,21 +198,36 @@ func oauth2ConsentPage(c *gin.Context, app *models.App, ctxID string) string {
 	b.WriteString("input{width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid #d4d4d8;border-radius:8px;font-size:14px;margin-bottom:8px}")
 	b.WriteString("button{width:100%;padding:10px 14px;border:none;border-radius:8px;background:#18181b;color:#fff;font-size:14px;cursor:pointer}")
 	b.WriteString("button.ghost{background:#fff;color:#18181b;border:1px solid #e4e4e7;margin-top:6px}button:disabled{opacity:.5;cursor:not-allowed}")
+	b.WriteString(".who{display:flex;align-items:center;gap:10px;margin-bottom:12px}.avatar{flex:0 0 38px;height:38px;border-radius:50%;background:#18181b;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:15px;font-weight:600}.who-info{display:flex;flex-direction:column;line-height:1.4}.who-info small{color:#a1a1aa;font-size:12px}")
+	b.WriteString("a.switch{display:block;text-align:center;color:#71717a;font-size:12.5px;margin-top:12px;text-decoration:none}a.switch:hover{color:#18181b}")
 	b.WriteString(".sep{height:1px;background:#e4e4e7;margin:22px 0 2px}")
 	b.WriteString(".msg{font-size:12px;color:#dc2626;margin-top:6px;display:none}.hint{color:#a1a1aa;font-size:12px;margin-top:14px;line-height:1.7}")
 	b.WriteString("</style></head><body><div class=\"card\"><h1>授权登录</h1>")
 	b.WriteString("<p class=\"sub\">应用 <strong>" + htmlEscape(app.Name) + "</strong> 请求获取您的登录身份</p>")
 
-	// 平台账号登录（IDP / CAS）
+	// 平台账号（IDP / CAS）：有会话 → 一键确认；无会话或 prompt=login → 登录表单
 	b.WriteString("<h2>使用 OauthGo 账号</h2>")
-	b.WriteString("<form id=\"pwdForm\" method=\"post\" action=\"/api/oauth2/platform-login\">")
-	b.WriteString("<input type=\"hidden\" name=\"ctx_id\" value=\"" + htmlEscape(ctxID) + "\">")
-	b.WriteString("<input id=\"username\" name=\"username\" autocomplete=\"username webauthn\" placeholder=\"用户名 / 邮箱 / 手机号\" required>")
-	b.WriteString("<input id=\"password\" name=\"password\" type=\"password\" autocomplete=\"current-password\" placeholder=\"密码（未设置密码可改用 Passkey）\">")
-	b.WriteString("<button type=\"submit\" id=\"pwdSubmit\">登录并授权</button>")
-	b.WriteString("</form>")
-	b.WriteString("<button class=\"ghost\" type=\"button\" id=\"passkeyBtn\">使用 Passkey / 安全密钥</button>")
-	b.WriteString("<div class=\"msg\" id=\"msg\"></div>")
+	if sessionUser != nil {
+		display := sessionUser.Nickname
+		if display == "" {
+			display = sessionUser.Username
+		}
+		initial := strings.ToUpper(string([]rune(display)[:1]))
+		b.WriteString("<div class=\"who\"><span class=\"avatar\">" + htmlEscape(initial) + "</span><div class=\"who-info\"><b>" + htmlEscape(display) + "</b><small>" + htmlEscape(sessionUser.Username) + "</small></div></div>")
+		b.WriteString("<form method=\"post\" action=\"/api/oauth2/consent\"><input type=\"hidden\" name=\"ctx_id\" value=\"" + htmlEscape(ctxID) + "\"><button type=\"submit\" id=\"consentBtn\">授权并继续</button></form>")
+		if !forceLogin {
+			b.WriteString("<a class=\"switch\" href=\"" + htmlEscape(switchURL) + "\">使用其他账号登录</a>")
+		}
+	} else {
+		b.WriteString("<form id=\"pwdForm\" method=\"post\" action=\"/api/oauth2/platform-login\">")
+		b.WriteString("<input type=\"hidden\" name=\"ctx_id\" value=\"" + htmlEscape(ctxID) + "\">")
+		b.WriteString("<input id=\"username\" name=\"username\" autocomplete=\"username webauthn\" placeholder=\"用户名 / 邮箱 / 手机号\" required>")
+		b.WriteString("<input id=\"password\" name=\"password\" type=\"password\" autocomplete=\"current-password\" placeholder=\"密码（未设置密码可改用 Passkey）\">")
+		b.WriteString("<button type=\"submit\" id=\"pwdSubmit\">登录并授权</button>")
+		b.WriteString("</form>")
+		b.WriteString("<button class=\"ghost\" type=\"button\" id=\"passkeyBtn\">使用 Passkey / 安全密钥</button>")
+		b.WriteString("<div class=\"msg\" id=\"msg\"></div>")
+	}
 
 	// 第三方渠道
 	b.WriteString("<h2>或使用第三方账号</h2>")
@@ -216,18 +245,20 @@ func oauth2ConsentPage(c *gin.Context, app *models.App, ctxID string) string {
 		}
 	}
 	b.WriteString("<p class=\"hint\">登录后平台会向该应用返回一次性授权码（code），用于换取访问令牌。授权地址必须与此前发起时一致。</p>")
-	b.WriteString("<script>")
-	b.WriteString("function showMsg(s){var m=document.getElementById('msg');m.style.display='block';m.textContent=s;}")
-	b.WriteString("function b64u(buf){var bytes=new Uint8Array(buf);var s='';for(var i=0;i<bytes.length;i++){s+=String.fromCharCode(bytes[i]);}return btoa(s).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/g,'');}")
-	b.WriteString("function b64toBytes(b64){b64=b64.replace(/\\-/g,'+').replace(/\\_/g,'/');while(b64.length%4){b64+='=';}var bin=atob(b64);var bytes=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++){bytes[i]=bin.charCodeAt(i);}return bytes;}")
-	b.WriteString("function credJSON(c){var r=c.response;var o={id:c.id,rawId:b64u(c.rawId),type:c.type,response:{clientDataJSON:b64u(r.clientDataJSON),attestationObject:b64u(r.attestationObject)}};if(r.getTransports){o.transports=r.getTransports();}return o;}")
-	b.WriteString("document.getElementById('pwdForm').addEventListener('submit',function(){var sb=document.getElementById('pwdSubmit');sb.disabled=true;sb.textContent='登录中…';var p=document.getElementById('password').value;if(!p){showMsg('请输入密码');event.preventDefault();sb.disabled=false;sb.textContent='登录并授权';}});")
-	b.WriteString("document.getElementById('passkeyBtn').addEventListener('click',function(){var btn=this;btn.disabled=true;var u=document.getElementById('username').value;if(!u){showMsg('请先在上方输入用户名');btn.disabled=false;return;}")
-	b.WriteString("fetch('/api/auth/passkey/login/begin?username='+encodeURIComponent(u)).then(function(r){if(!r.ok)return r.json().then(function(j){throw new Error(j.message||'begin 失败')});return r.json();}).then(function(data){var opt=data.data.options;if(opt&&opt.publicKey){opt=opt.publicKey;}if(opt&&opt.challenge){opt.challenge=b64toBytes(opt.challenge);}if(opt&&opt.allowCredentials){for(var i=0;i<opt.allowCredentials.length;i++){opt.allowCredentials[i].id=b64toBytes(opt.allowCredentials[i].id);}}return navigator.credentials.get({publicKey:opt}).then(function(cred){")
-	b.WriteString("if(!cred)throw new Error('已取消认证');var body={id:cred.id,rawId:b64u(cred.rawId),type:cred.type,response:{clientDataJSON:b64u(cred.response.clientDataJSON),authenticatorData:b64u(cred.response.authenticatorData),signature:b64u(cred.response.signature)});if(cred.response.userHandle){body.response.userHandle=b64u(cred.response.userHandle);}")
-	b.WriteString("return fetch('/api/auth/passkey/login/finish?session_id='+encodeURIComponent(data.data.session_id),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});}).then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.message||'finish 失败');return j.data.token;});});}).then(function(token){")
-	b.WriteString("var f=document.createElement('form');f.method='post';f.action='/api/oauth2/platform-login';function add(n,v){var i=document.createElement('input');i.type='hidden';i.name=n;i.value=v;f.appendChild(i);}add('ctx_id','" + htmlEscape(ctxID) + "');add('token',token);document.body.appendChild(f);f.submit();}).catch(function(e){showMsg(e.message||'Passkey 登录失败');btn.disabled=false;});});")
-	b.WriteString("</script>")
+	if sessionUser == nil {
+		b.WriteString("<script>")
+		b.WriteString("function showMsg(s){var m=document.getElementById('msg');m.style.display='block';m.textContent=s;}")
+		b.WriteString("function b64u(buf){var bytes=new Uint8Array(buf);var s='';for(var i=0;i<bytes.length;i++){s+=String.fromCharCode(bytes[i]);}return btoa(s).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/g,'');}")
+		b.WriteString("function b64toBytes(b64){b64=b64.replace(/\\-/g,'+').replace(/\\_/g,'/');while(b64.length%4){b64+='=';}var bin=atob(b64);var bytes=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++){bytes[i]=bin.charCodeAt(i);}return bytes;}")
+		b.WriteString("function credJSON(c){var r=c.response;var o={id:c.id,rawId:b64u(c.rawId),type:c.type,response:{clientDataJSON:b64u(r.clientDataJSON),attestationObject:b64u(r.attestationObject)}};if(r.getTransports){o.transports=r.getTransports();}return o;}")
+		b.WriteString("document.getElementById('pwdForm').addEventListener('submit',function(){var sb=document.getElementById('pwdSubmit');sb.disabled=true;sb.textContent='登录中…';var p=document.getElementById('password').value;if(!p){showMsg('请输入密码');event.preventDefault();sb.disabled=false;sb.textContent='登录并授权';}});")
+		b.WriteString("document.getElementById('passkeyBtn').addEventListener('click',function(){var btn=this;btn.disabled=true;var u=document.getElementById('username').value;if(!u){showMsg('请先在上方输入用户名');btn.disabled=false;return;}")
+		b.WriteString("fetch('/api/auth/passkey/login/begin?username='+encodeURIComponent(u)).then(function(r){if(!r.ok)return r.json().then(function(j){throw new Error(j.message||'begin 失败')});return r.json();}).then(function(data){var opt=data.data.options;if(opt&&opt.publicKey){opt=opt.publicKey;}if(opt&&opt.challenge){opt.challenge=b64toBytes(opt.challenge);}if(opt&&opt.allowCredentials){for(var i=0;i<opt.allowCredentials.length;i++){opt.allowCredentials[i].id=b64toBytes(opt.allowCredentials[i].id);}}return navigator.credentials.get({publicKey:opt}).then(function(cred){")
+		b.WriteString("if(!cred)throw new Error('已取消认证');var body={id:cred.id,rawId:b64u(cred.rawId),type:cred.type,response:{clientDataJSON:b64u(cred.response.clientDataJSON),authenticatorData:b64u(cred.response.authenticatorData),signature:b64u(cred.response.signature)}};if(cred.response.userHandle){body.response.userHandle=b64u(cred.response.userHandle);}")
+		b.WriteString("return fetch('/api/auth/passkey/login/finish?session_id='+encodeURIComponent(data.data.session_id),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});}).then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.message||'finish 失败');return j.data;});});}).then(function(data){")
+		b.WriteString("var f=document.createElement('form');f.method='post';f.action='/api/oauth2/platform-login';function add(n,v){var i=document.createElement('input');i.type='hidden';i.name=n;i.value=v;f.appendChild(i);}add('ctx_id','" + htmlEscape(ctxID) + "');add('token',data.token);document.body.appendChild(f);f.submit();}).catch(function(e){showMsg(e.message||'Passkey 登录失败');btn.disabled=false;});});")
+		b.WriteString("</script>")
+	}
 	b.WriteString("</div></body></html>")
 	return b.String()
 }
@@ -867,6 +898,13 @@ func OAuth2PlatformLogin(c *gin.Context) {
 		return
 	}
 
+	// 建立登录会话：本次在授权页登录后，后续授权免重复登录
+	establishSession(c, user.ID)
+	issuePlatformCodeAndRedirect(c, ctx, user, app)
+}
+
+// issuePlatformCodeAndRedirect 为平台账号签发一次性授权码并 302 回目标站点（含审计记录）
+func issuePlatformCodeAndRedirect(c *gin.Context, ctx services.OAuthCtx, user models.User, app *models.App) {
 	code := models.OAuthCode{
 		Code:          strings.ToUpper(utils.RandomString(32)),
 		ClientID:      ctx.ClientID,
@@ -898,6 +936,37 @@ func OAuth2PlatformLogin(c *gin.Context) {
 		params["state"] = ctx.State
 	}
 	c.Redirect(http.StatusFound, buildRedirectURL(ctx.RedirectURI, params))
+}
+
+// OAuth2Consent 已登录用户一键确认授权（会话 Cookie 即凭据；SameSite=Lax 使跨站 POST 不携带 Cookie，
+// 攻击者无法借受害者会话为自己发码）。POST /api/oauth2/consent  form: ctx_id
+func OAuth2Consent(c *gin.Context) {
+	ctxID := strings.TrimSpace(c.Request.FormValue("ctx_id"))
+	if ctxID == "" {
+		oauth2ErrorHTML(c, http.StatusBadRequest, "invalid_request", "缺少 ctx_id，请重新发起授权")
+		return
+	}
+	ctx, ok := services.ResolveOAuthCtx(ctxID)
+	if !ok {
+		oauth2ErrorHTML(c, http.StatusBadRequest, "invalid_request", "授权会话无效或已过期，请重新发起授权")
+		return
+	}
+	sess := sessionFromCookie(c)
+	if sess == nil {
+		oauth2ErrorHTML(c, http.StatusBadRequest, "access_denied", "登录会话无效或已过期，请重新登录")
+		return
+	}
+	var user models.User
+	if err := database.DB.First(&user, sess.UserID).Error; err != nil {
+		oauth2ErrorHTML(c, http.StatusBadRequest, "access_denied", "用户不存在")
+		return
+	}
+	app, err := services.GetAppByID(ctx.ClientID)
+	if err != nil || (app.Mode != services.ModeOAuth2 && app.Mode != services.ModeCompat) {
+		oauth2ErrorHTML(c, http.StatusBadRequest, "unauthorized_client", "应用不存在或未开启 OAuth2/OIDC 协议")
+		return
+	}
+	issuePlatformCodeAndRedirect(c, ctx, user, app)
 }
 
 // findUserByAccount 按用户名/邮箱/手机号查找平台账号

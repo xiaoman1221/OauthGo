@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { authApi } from '@/lib/api'
+import { authApi, http } from '@/lib/api'
 import type { User } from '@/lib/api'
 
 interface UserState {
@@ -33,6 +33,8 @@ export const useUserStore = create<UserState>((set) => ({
   },
   setUserInfo: (user) => set({ userInfo: user }),
   logout: () => {
+    // 同步吊销服务端 OIDC 登录会话（尽力而为，失败不影响本地退出）
+    http.post('/auth/logout').catch(() => {})
     localStorage.removeItem('token')
     set({ token: '', userInfo: null })
   }

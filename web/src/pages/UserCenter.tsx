@@ -9,18 +9,19 @@ import { StatusBadge } from '@/components/status-badge'
 import { UserAvatar } from '@/components/user-avatar'
 import { Separator } from '@/components/ui/separator'
 import { ConfirmDialog } from '@/components/ui/confirm'
-import { authApi, type Binding, type PasskeyCredential } from '@/lib/api'
+import { authApi, type Binding, type PasskeyCredential, type UserSessionInfo } from '@/lib/api'
 import { isWebAuthnSupported, startPasskeyRegistration } from '@/lib/passkey'
 import { useUserStore } from '@/store/user'
 import { cn } from '@/lib/utils'
 
-type Tab = 'profile' | 'password' | 'bindings' | 'passkey'
+type Tab = 'profile' | 'password' | 'bindings' | 'passkey' | 'sessions'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'profile', label: '基本资料' },
   { key: 'password', label: '修改密码' },
   { key: 'bindings', label: '账号绑定' },
-  { key: 'passkey', label: 'Passkey / 安全密钥' }
+  { key: 'passkey', label: 'Passkey / 安全密钥' },
+  { key: 'sessions', label: '在线会话' }
 ]
 
 export default function UserCenter() {
@@ -60,6 +61,9 @@ export default function UserCenter() {
   // passkey
   const [passkeys, setPasskeys] = useState<PasskeyCredential[]>([])
   const [passkeyBusy, setPasskeyBusy] = useState(false)
+
+  // sessions
+  const [sessions, setSessions] = useState<UserSessionInfo[]>([])
 
   useEffect(() => {
     applyUser()
@@ -141,6 +145,25 @@ export default function UserCenter() {
       await loadPasskeys()
     } catch (err) {
       toast.error((err as Error).message || '删除失败')
+    }
+  }
+
+  const loadSessions = async () => {
+    try {
+      const data = await authApi.sessions()
+      setSessions(Array.isArray(data.list) ? data.list : [])
+    } catch {
+      setSessions([])
+    }
+  }
+
+  const onRevokeSession = async (id: string) => {
+    try {
+      await authApi.revokeSession(id)
+      toast.success('会话已吊销')
+      await loadSessions()
+    } catch (err) {
+      toast.error((err as Error).message || '吊销失败')
     }
   }
 
@@ -243,6 +266,12 @@ export default function UserCenter() {
     loadPasskeys()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // 切到在线会话页签时加载会话列表
+  useEffect(() => {
+    if (tab === 'sessions') loadSessions()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab])
 
   return (
     <div>
@@ -414,6 +443,45 @@ export default function UserCenter() {
                     <Button variant="outline" size="sm" className="text-destructive" onClick={() => onDeletePasskey(k.id)}>
                       删除
                     </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {tab === 'sessions' && (
+            <div className="max-w-xl">
+              <p className="mb-4 text-sm text-muted-foreground">
+                登录会话用于 OIDC 授权页免重复登录（单点登录）。吊销后对应设备下次授权需重新登录。
+              </p>
+              {sessions.length === 0 && (
+                <p className="text-sm text-muted-foreground">当前没有有效的登录会话。</p>
+              )}
+              <div className="space-y-2">
+                {sessions.map((s) => (
+                  <div key={s.id} className="rounded-md border border-border px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">{s.ip || '未知 IP'}</span>
+                        <StatusBadge status={s.current ? 'success' : 'muted'}>
+                          {s.current ? '当前设备' : '其他设备'}
+                        </StatusBadge>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-destructive"
+                        onClick={() => onRevokeSession(s.id)}
+                      >
+                        吊销
+                      </Button>
+                    </div>
+                    <div className="mt-1 truncate text-xs text-muted-foreground" title={s.user_agent}>
+                      {s.user_agent || '未知设备'}
+                    </div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">
+                      登录于 {new Date(s.created_at).toLocaleString()} · 最近使用{' '}
+                      {new Date(s.last_used_at).toLocaleString()}
+                    </div>
                   </div>
                 ))}
               </div>

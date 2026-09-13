@@ -5,6 +5,7 @@ import (
 
 	"OauthGo/database"
 	"OauthGo/models"
+	"OauthGo/services"
 	"OauthGo/utils"
 
 	"github.com/gin-gonic/gin"
@@ -155,6 +156,8 @@ func UpdateUser(c *gin.Context) {
 		}
 		updates["password"] = hash
 		updates["password_set"] = true
+		// 重置密码后吊销该用户全部登录会话
+		services.DeleteUserSessions(uint(id))
 	}
 	if len(updates) == 0 {
 		utils.FailBadRequest(c, "没有需要更新的字段")
@@ -184,10 +187,11 @@ func DeleteUser(c *gin.Context) {
 		utils.FailInternal(c, "删除用户失败")
 		return
 	}
-	// 级联清理该用户的第三方绑定、Passkey、OAuth 授权码/令牌与名下应用，避免孤儿数据
+	// 级联清理该用户的第三方绑定、Passkey、登录会话、OAuth 授权码/令牌与名下应用，避免孤儿数据
 	// （名下应用的授权码与令牌一并清理，防止残留访问能力）
 	database.DB.Where("user_id = ?", id).Delete(&models.ProviderAccount{})
 	database.DB.Where("user_id = ?", id).Delete(&models.PasskeyCredential{})
+	database.DB.Where("user_id = ?", id).Delete(&models.UserSession{})
 	database.DB.Where("user_id = ?", id).Delete(&models.OAuthCode{})
 	database.DB.Where("user_id = ?", id).Delete(&models.OAuthAccessToken{})
 	database.DB.Where("user_id = ?", id).Delete(&models.OAuthRefreshToken{})

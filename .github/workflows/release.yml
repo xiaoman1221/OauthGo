@@ -8,16 +8,17 @@ name: Release
 #   - GitHub（https://github.com）：创建 GitHub Release + 推送 GHCR / Docker Hub 镜像
 #   - 私有环境（其它 server_url）：跳过 Docker 发布，改为调用 Forgejo/Gitea
 #     原生 Release API 发布同版本 Tag 的构建产物（Tag 与 GitHub 保持一致）
+# 权限说明：不声明 permissions 字段（Forgejo 不支持该字段，声明会触发告警）。
+# - 私有环境：Forgejo/Gitea 自动注入的 GITHUB_TOKEN 默认具备仓库读写权限；
+# - GitHub：依赖仓库默认的 Workflow Token 权限，请确认
+#   Settings → Actions → General → Workflow permissions = "Read and write"，
+#   否则 release（创建 Release）与 docker（推送 GHCR）会 403。
 on:
   push:
     branches:
       - master
     tags:
       - 'v[0-9]*'
-
-permissions:
-  contents: write
-  packages: write
 
 jobs:
   # 1. 解析版本号（两边都跑）
@@ -55,6 +56,8 @@ jobs:
           node-version: 20
           # 智能缓存：只有 GitHub 官方运行时才开启 npm 缓存，私有 runner 自动跳过防止报错
           cache: ${{ github.server_url == 'https://github.com' && 'npm' || '' }}
+          # 锁文件在 web/ 子目录，必须显式指定，否则 setup-node 在仓库根目录找不到会直接失败
+          cache-dependency-path: web/package-lock.json
       - name: Install dependencies
         run: npm ci
         working-directory: web
