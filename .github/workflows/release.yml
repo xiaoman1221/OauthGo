@@ -1,62 +1,39 @@
 name: Release
 
-# 触发方式（满足其一即可，GitHub 与私有环境（Forgejo/Gitea）行为一致）：
-#   1. 推送形如 v1.0.0 的标签
-#   2. 推送 master 分支且提交信息包含版本号（如 "release：v1.0.0"）
-#
-# 双环境自适应（按 github.server_url 区分）：
-#   - GitHub（https://github.com）：创建 GitHub Release + 推送 GHCR / Docker Hub 镜像
-#   - 私有环境（其它 server_url）：跳过 Docker 发布，改为调用 Forgejo/Gitea
-#     原生 Release API 发布同版本 Tag 的构建产物（Tag 与 GitHub 保持一致）
-# 权限说明：不声明 permissions 字段（Forgejo 不支持该字段，声明会触发告警）。
-# - 私有环境：Forgejo/Gitea 自动注入的 GITHUB_TOKEN 默认具备仓库读写权限；
-# - GitHub：依赖仓库默认的 Workflow Token 权限，请确认
-#   Settings → Actions → General → Workflow permissions = "Read and write"，
-#   否则 release（创建 Release）与 docker（推送 GHCR）会 403。
+# 推送形如 v1.0.0 的版本标签时触发：
+#   git tag v1.0.0 && git push origin v1.0.0
 on:
   push:
-    branches:
-      - master
     tags:
       - 'v[0-9]*'
 
-jobs:
-  # 1. 解析版本号（两边都跑）
-  resolve-version:
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.detect.outputs.version }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Detect version
-        id: detect
-        run: |
-          VERSION=""
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            VERSION="${{ github.ref_name }}"
-          else
-            VERSION=$(git log -1 --format=%s | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -n1 || true)
-          fi
-          if [[ -n "$VERSION" ]] && [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-            echo "检测到版本号：$VERSION"
-          else
-            echo "未检测到版本号，跳过发布"
-          fi
+permissions:
+  contents: write
+  packages: write
 
-  # 2. 构建前端产物（两边都跑）
+jobs:
+  # 校验版本号格式（vX.Y.Z），不符合则直接失败
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate version tag (vX.Y.Z)
+        run: |
+          if ! [[ "${{ github.ref_name }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::版本号格式不正确：${{ github.ref_name }}，应为 v1.0.0 形式"
+            exit 1
+          fi
+          echo "版本号：${{ github.ref_name }}"
+
+  # 构建前端产物（web/dist），供各平台编译复用
   frontend:
-    needs: resolve-version
-    if: needs.resolve-version.outputs.version != ''
+    needs: preflight
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          # 智能缓存：只有 GitHub 官方运行时才开启 npm 缓存，私有 runner 自动跳过防止报错
-          cache: ${{ github.server_url == 'https://github.com' && 'npm' || '' }}
-          # 锁文件在 web/ 子目录，必须显式指定，否则 setup-node 在仓库根目录找不到会直接失败
+          cache: npm
           cache-dependency-path: web/package-lock.json
       - name: Install dependencies
         run: npm ci
@@ -69,10 +46,9 @@ jobs:
           name: frontend-dist
           path: web/dist
 
-  # 3. 交叉编译主流系统（两边都跑）
+  # 交叉编译主流系统（Windows / Linux / macOS，amd64 + arm64）
   build:
-    needs: [resolve-version, frontend]
-    if: needs.resolve-version.outputs.version != ''
+    needs: [preflight, frontend]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -102,18 +78,11 @@ jobs:
         run: go build -trimpath -ldflags="-s -w" -o oauthgo${{ matrix.ext }} .
       - name: Package (binary + web/dist)
         run: |
-          mkdir -p _pkg/web release
+          mkdir -p _pkg release
           cp oauthgo${{ matrix.ext }} _pkg/
-          cp -r web/dist _pkg/web/dist
-          # 兼容私有 runner（docker 容器常以 root 运行、无 sudo）
-          if ! command -v zip >/dev/null 2>&1; then
-            if command -v sudo >/dev/null 2>&1; then
-              sudo apt-get update -qq >/dev/null 2>&1 && sudo apt-get install -y -qq zip >/dev/null 2>&1
-            else
-              apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq zip >/dev/null 2>&1
-            fi
-          fi
+          cp -r web/dist _pkg/web
           if [[ "${{ matrix.os }}" == "windows" ]]; then
+            sudo apt-get update -qq >/dev/null 2>&1 && sudo apt-get install -y -qq zip >/dev/null 2>&1
             (cd _pkg && zip -qr ../release/oauthgo-${{ matrix.os }}-${{ matrix.arch }}.zip oauthgo.exe web)
           else
             tar -czf release/oauthgo-${{ matrix.os }}-${{ matrix.arch }}.tar.gz -C _pkg oauthgo web
@@ -124,71 +93,25 @@ jobs:
           name: oauthgo-${{ matrix.os }}-${{ matrix.arch }}
           path: release/*
 
-  # 4. 智能发布阶段：两边都跑，按平台调用各自的发布方式
+  # 创建 GitHub Release 并附上所有平台的编译产物
   release:
-    needs: [build, resolve-version]
-    if: needs.resolve-version.outputs.version != ''
+    needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           pattern: oauthgo-*
           merge-multiple: true
-
-      # 🟢 GitHub：官方 softprops 组件创建 Release（Tag 不存在时自动创建）
       - name: Create GitHub Release
-        if: github.server_url == 'https://github.com'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.resolve-version.outputs.version }}
-          target_commitish: ${{ github.sha }}
+          tag_name: ${{ github.ref_name }}
           files: oauthgo-*
           generate_release_notes: true
 
-      # 🟢 私有环境（Forgejo / Gitea）：直接调用原生 Release API 发布。
-      #    使用 curl 而非第三方 Action，避免外部 Action 可用性问题；
-      #    Tag 名与 GitHub 侧一致（同为 vX.Y.Z），已存在同名 Release 时先删后建保证幂等。
-      - name: Create Forgejo/Gitea Release
-        if: github.server_url != 'https://github.com'
-        env:
-          API: ${{ github.api_url }}            # 私有实例形如 https://git.example.com/api/v1
-          REPO: ${{ github.repository }}
-          TOKEN: ${{ secrets.GITHUB_TOKEN }}    # Forgejo/Gitea 自动注入的 Actions Token
-          VERSION: ${{ needs.resolve-version.outputs.version }}
-        run: |
-          set -e
-          AUTH="Authorization: token ${TOKEN}"
-
-          # 同名 Tag 的 Release 已存在（重复运行）则先删除，保证产物与 Tag 一致
-          code=$(curl -s -o /tmp/rel.json -w '%{http_code}' \
-            -H "$AUTH" "${API}/repos/${REPO}/releases/tags/${VERSION}")
-          if [[ "$code" == "200" ]]; then
-            rel_id=$(grep -oE '"id":[0-9]+' /tmp/rel.json | head -n1 | grep -oE '[0-9]+')
-            echo "已存在 Release #${rel_id}，删除后重建"
-            curl -sf -X DELETE -H "$AUTH" "${API}/repos/${REPO}/releases/${rel_id}"
-          fi
-
-          # 创建 Release（Tag 不存在时默认指向默认分支，与 GitHub 侧行为一致）
-          release_id=$(curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" \
-            -d "{\"tag_name\":\"${VERSION}\",\"name\":\"${VERSION}\",\"body\":\"OauthGo ${VERSION}\",\"draft\":false,\"prerelease\":false}" \
-            "${API}/repos/${REPO}/releases" \
-            | grep -oE '"id":[0-9]+' | head -n1 | grep -oE '[0-9]+')
-          echo "Release #${release_id} 创建成功"
-
-          # 上传全部构建产物
-          for f in oauthgo-*; do
-            echo "上传附件：${f}"
-            curl -sf -X POST -H "$AUTH" -H "Content-Type: application/octet-stream" \
-              --data-binary @"${f}" \
-              "${API}/repos/${REPO}/releases/${release_id}/assets?name=$(basename "${f}")" >/dev/null
-          done
-          echo "私有环境 Release 发布完成：${VERSION}"
-
-  # 5. 🐳 Docker 构建与镜像推送（仅 GitHub 官方环境执行，私有环境跳过）
+  # 构建多架构 Docker 镜像，发布到 GitHub Container Registry 与 Docker Hub
   docker:
-    needs: resolve-version
-    if: needs.resolve-version.outputs.version != '' && github.server_url == 'https://github.com'
+    needs: preflight
     runs-on: ubuntu-latest
     env:
       DH_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -216,7 +139,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/oauthgo:${{ needs.resolve-version.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/oauthgo:${{ github.ref_name }}
             ghcr.io/${{ github.repository_owner }}/oauthgo:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -228,6 +151,6 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ env.DH_USERNAME }}/oauthgo:${{ needs.resolve-version.outputs.version }}
+            ${{ env.DH_USERNAME }}/oauthgo:${{ github.ref_name }}
             ${{ env.DH_USERNAME }}/oauthgo:latest
           cache-from: type=gha
