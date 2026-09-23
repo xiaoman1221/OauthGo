@@ -6,8 +6,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -371,7 +373,8 @@ func handleOAuthCallback(c *gin.Context, ctx services.OAuthCtx, providerName, pr
 // ---------- Token 端点 ----------
 
 // TokenOAuth2 标准 OAuth2 Token 端点（RFC 6749 §3.2）
-// 支持 grant_type=authorization_code 与 grant_type=refresh_token（轮换制）
+// 支持 grant_type=authorization_code 与 grant_type=refresh_token（轮换制）；
+// 参数可位于 POST 表单或 GET query（国内平台常用 GET）。
 func TokenOAuth2(c *gin.Context) {
 	if err := c.Request.ParseForm(); err != nil {
 		oauth2TokenError(c, http.StatusBadRequest, "invalid_request", "无法解析请求体")
@@ -379,11 +382,18 @@ func TokenOAuth2(c *gin.Context) {
 	}
 	clientID, clientSecret, ok := oauth2ClientCredentials(c)
 	if !ok {
+		oauth2TokenAuthFailLog(c, "缺少客户端凭据")
 		oauth2TokenError(c, http.StatusUnauthorized, "invalid_client", "客户端认证失败")
 		return
 	}
 	app, err := services.GetAppByID(clientID)
-	if err != nil || !oauth2SecretEqual(app.AppKey, clientSecret) {
+	if err != nil {
+		oauth2TokenAuthFailLog(c, "client_id 未匹配到应用")
+		oauth2TokenError(c, http.StatusUnauthorized, "invalid_client", "客户端认证失败")
+		return
+	}
+	if !oauth2SecretEqual(app.AppKey, clientSecret) {
+		oauth2TokenAuthFailLog(c, "client_secret 不匹配")
 		oauth2TokenError(c, http.StatusUnauthorized, "invalid_client", "客户端认证失败")
 		return
 	}
@@ -416,12 +426,28 @@ func oauth2ClientCredentials(c *gin.Context) (string, string, bool) {
 		}
 		return "", "", false
 	}
-	id := c.Request.Form.Get("client_id")
-	secret := c.Request.Form.Get("client_secret")
+	// 兼容非标准命名：本平台文档中 appid = client_id、appkey = client_secret，
+	// 部分接入方（国内平台）直接按这套命名传参；client_id / client_secret 优先。
+	id := oauth2AuthParam(c, "client_id", "appid", "app_id")
+	secret := oauth2AuthParam(c, "client_secret", "appkey", "app_key", "app_secret")
 	if id == "" {
 		return "", "", false
 	}
 	return id, secret, true
+}
+
+// oauth2TokenAuthFailLog 记录 token 端点客户端认证失败的上下文，便于定位接入方参数差异
+// （参数名不同、密钥为空/不匹配、改用 GET 等）。只记录参数名与 client_id（公开标识），
+// 不记录任何密钥值。
+func oauth2TokenAuthFailLog(c *gin.Context, reason string) {
+	names := make([]string, 0, len(c.Request.Form))
+	for k := range c.Request.Form {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	log.Printf("[WARN] token 端点客户端认证失败（%s）：method=%s client_id=%q 收到参数=%v 带 Authorization 头=%t ua=%q",
+		reason, c.Request.Method, oauth2AuthParam(c, "client_id", "appid", "app_id"), names,
+		c.GetHeader("Authorization") != "", c.Request.UserAgent())
 }
 
 func oauth2TokenByCode(c *gin.Context, app *models.App) {

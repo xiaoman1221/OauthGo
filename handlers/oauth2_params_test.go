@@ -193,6 +193,24 @@ func TestOAuth2TokenViaGETQuery(t *testing.T) {
 		t.Fatalf("GET 换令牌失败应返回 JSON 错误: %d %s", wBad.Code, bodyBad)
 	}
 
+	// 客户端凭据别名：本平台文档里 appid = client_id、appkey = client_secret
+	code2 := models.OAuthCode{
+		Code:        strings.ToUpper(utils.RandomString(32)),
+		ClientID:    app.AppID,
+		UserID:      user.ID,
+		Scope:       "openid",
+		RedirectURI: cb,
+		ExpiresAt:   time.Now().Add(time.Minute),
+	}
+	if err := database.DB.Create(&code2).Error; err != nil {
+		t.Fatalf("插入授权码失败: %v", err)
+	}
+	wAlias, bodyAlias := doGet(t, "/token?grant_type=authorization_code&code="+code2.Code+
+		"&redirect_uri="+url.QueryEscape(cb)+"&appid="+app.AppID+"&appkey="+app.AppKey)
+	if wAlias.Code != http.StatusOK {
+		t.Fatalf("appid/appkey 别名换令牌应成功: %d %s", wAlias.Code, bodyAlias)
+	}
+
 	// 后端命名空间下的未知路径：GET 也不能回退前端页面
 	// （/token/ 除外：命中 gin 的尾斜杠 301 跳转，属标准行为）
 	for _, p := range []string{"/oauth2/token", "/oauth2/whatever", "/api/oauth2/nope", "/.well-known/nope"} {
