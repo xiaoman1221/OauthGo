@@ -59,6 +59,12 @@ func Setup() *gin.Engine {
 			oauth2.GET("/authorize", handlers.AuthorizeOAuth2)
 			oauth2.POST("/authorize", handlers.AuthorizeOAuth2)
 			oauth2.POST("/token", handlers.TokenOAuth2)
+			// GET 也支持换令牌：QQ / 微信 / WPS 企业 SSO 等接入方用 GET + query 参数交换。
+			// 只注册 POST 时，这类请求会落到前端路由回退、返回 HTML，接入方解析 JSON 失败
+			// （典型报错 "token response json decode failed"）。参数在 c.Request.Form 中，
+			// GET 时即 query，handler 无需区分。
+			// 注意：GET 会把 client_secret 暴露在 URL（可能进代理日志），能用 POST 时应优先 POST。
+			oauth2.GET("/token", handlers.TokenOAuth2)
 			oauth2.GET("/userinfo", handlers.OAuth2Userinfo)
 			oauth2.POST("/userinfo", handlers.OAuth2Userinfo)
 			oauth2.GET("/jwks", handlers.OAuth2JWKS)
@@ -194,6 +200,7 @@ func Setup() *gin.Engine {
 		oauth2Root.GET("/authorize", handlers.AuthorizeOAuth2)
 		oauth2Root.POST("/authorize", handlers.AuthorizeOAuth2)
 		oauth2Root.POST("/token", handlers.TokenOAuth2)
+		oauth2Root.GET("/token", handlers.TokenOAuth2) // 见上方 GET 换令牌说明
 		oauth2Root.GET("/userinfo", handlers.OAuth2Userinfo)
 		oauth2Root.POST("/userinfo", handlers.OAuth2Userinfo)
 		oauth2Root.GET("/jwks", handlers.OAuth2JWKS)
@@ -243,16 +250,21 @@ func requestLogger() gin.HandlerFunc {
 // serveFrontend 提供前端静态资源（构建产物位于 web/dist）
 func serveFrontend(r *gin.Engine) {
 	dist := frontendDistDir()
-	if info, err := os.Stat(dist); err != nil || !info.IsDir() {
-		return
+	hasDist := false
+	if info, err := os.Stat(dist); err == nil && info.IsDir() {
+		hasDist = true
+		r.Static("/assets", filepath.Join(dist, "assets"))
+		r.StaticFile("/favicon.ico", filepath.Join(dist, "favicon.ico"))
+		r.StaticFile("/favicon.svg", filepath.Join(dist, "favicon.svg"))
 	}
 
-	r.Static("/assets", filepath.Join(dist, "assets"))
-	r.StaticFile("/favicon.ico", filepath.Join(dist, "favicon.ico"))
-	r.StaticFile("/favicon.svg", filepath.Join(dist, "favicon.svg"))
+	// 未构建前端（无 web/dist）时同样注册 NoRoute：后端命名空间必须回 JSON 404，
+	// 不能落到 gin 默认的纯文本 404
 	r.NoRoute(func(c *gin.Context) {
-		// API 命名空间一律返回 404 JSON，避免误回前端页面
-		if p := c.Request.URL.Path; p == "/api" || strings.HasPrefix(p, "/api/") {
+		// 后端命名空间（/api、/oauth2、/.well-known、/connect.php 及 OAuth2 端点路径）
+		// 一律返回 404 JSON：绝不回退前端页面，否则接入方（如 WPS 企业 SSO）会拿到 HTML
+		// 而报 "token response json decode failed" 这类难以定位的错误。
+		if !hasDist || isReservedBackendPath(c.Request.URL.Path) {
 			c.JSON(404, gin.H{"code": 404, "message": "not found"})
 			return
 		}
@@ -263,6 +275,28 @@ func serveFrontend(r *gin.Engine) {
 		}
 		c.JSON(404, gin.H{"code": 404, "message": "not found"})
 	})
+}
+
+// reservedBackendPrefixes 后端接口路径前缀（含子路径）
+var reservedBackendPrefixes = []string{"/api", "/oauth2", "/.well-known", "/connect.php"}
+
+// reservedBackendPaths OAuth2 端点的精确路径（方法未注册时同样不能回退前端页面）
+var reservedBackendPaths = map[string]struct{}{
+	"/authorize": {}, "/token": {}, "/userinfo": {}, "/jwks": {},
+	"/revoke": {}, "/introspect": {}, "/platform-login": {}, "/consent": {},
+}
+
+// isReservedBackendPath 判断路径是否属于后端接口/OAuth2 端点
+func isReservedBackendPath(p string) bool {
+	if _, ok := reservedBackendPaths[p]; ok {
+		return true
+	}
+	for _, prefix := range reservedBackendPrefixes {
+		if p == prefix || strings.HasPrefix(p, prefix+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // frontendDistDir 定位前端构建产物目录：

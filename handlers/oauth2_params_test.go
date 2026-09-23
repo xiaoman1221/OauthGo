@@ -7,9 +7,11 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"OauthGo/database"
 	"OauthGo/models"
+	"OauthGo/utils"
 )
 
 // 样例接入方（WPS 企业 SSO）在「应用管理」里的配置：回调白名单 + 接入示例参数。
@@ -149,6 +151,59 @@ func TestOAuth2AuthorizeWPSStyle(t *testing.T) {
 			t.Fatalf("授权页渠道链接未重放接入方参数（缺 %s）: %s", want, body)
 		}
 	}
+}
+
+// TestOAuth2TokenViaGETQuery 覆盖用 GET + query 换令牌的接入方（QQ / 微信 / WPS 企业 SSO 风格）。
+// 仅注册 POST 时这类请求会落到前端路由回退、返回 HTML，接入方报
+// "token response json decode failed"；后端命名空间也不得回退前端页面。
+func TestOAuth2TokenViaGETQuery(t *testing.T) {
+	app := seedOAuth2App(t)
+	cb := "https://target.example.com/callback"
+	user, _ := testUser(t)
+
+	code := models.OAuthCode{
+		Code:        strings.ToUpper(utils.RandomString(32)),
+		ClientID:    app.AppID,
+		UserID:      user.ID,
+		Scope:       "openid profile",
+		RedirectURI: cb,
+		ExpiresAt:   time.Now().Add(time.Minute),
+	}
+	if err := database.DB.Create(&code).Error; err != nil {
+		t.Fatalf("插入授权码失败: %v", err)
+	}
+
+	// GET + query 换令牌 → 200 JSON，含 access_token
+	w, body := doGet(t, "/token?grant_type=authorization_code&code="+code.Code+
+		"&redirect_uri="+url.QueryEscape(cb)+"&client_id="+app.AppID+"&client_secret="+app.AppKey)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET 换令牌应成功: %d %s", w.Code, body)
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Fatalf("GET 换令牌应返回 JSON，实际 %s", ct)
+	}
+	var tok map[string]interface{}
+	if err := json.Unmarshal([]byte(body), &tok); err != nil || tok["access_token"] == nil {
+		t.Fatalf("GET 换令牌响应异常: %v %s", err, body)
+	}
+
+	// 客户端认证失败也必须是 JSON（不能是前端页面）
+	wBad, bodyBad := doGet(t, "/token?grant_type=authorization_code&code=x&client_id=nope")
+	if wBad.Code != http.StatusUnauthorized || !strings.Contains(wBad.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("GET 换令牌失败应返回 JSON 错误: %d %s", wBad.Code, bodyBad)
+	}
+
+	// 后端命名空间下的未知路径：GET 也不能回退前端页面
+	// （/token/ 除外：命中 gin 的尾斜杠 301 跳转，属标准行为）
+	for _, p := range []string{"/oauth2/token", "/oauth2/whatever", "/api/oauth2/nope", "/.well-known/nope"} {
+		wUnknown, bodyUnknown := doGet(t, p)
+		if wUnknown.Code != http.StatusNotFound || !strings.Contains(wUnknown.Header().Get("Content-Type"), "application/json") {
+			t.Fatalf("后端路径 %s 应返回 404 JSON，实际 %d %s", p, wUnknown.Code, bodyUnknown)
+		}
+	}
+
+	// 说明：测试二进制的 CWD 是 handlers/，找不到 web/dist，因此这里不校验
+	// 「非后端路径回退 SPA 页面」——该行为需要构建产物，已在线上实测（GET /token 曾返回 index.html）。
 }
 
 // TestOAuth2AuthorizeNonStandardParams 覆盖非标准参数名与带动态 query 的回调地址
