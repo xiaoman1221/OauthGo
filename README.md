@@ -142,6 +142,7 @@ GET /connect.php?act=callback&appid={appid}&appkey={appkey}&type=gitee&code={cod
 - 支持 PKCE（S256/plain）、refresh_token 轮换、nonce 透传写入 id_token、一次性授权码
 - scope 含 `openid` 时签发 RS256 id_token；`profile` / `email` / `phone` scope 控制用户信息字段
 - `/authorize` 未指定 `type` 时返回授权页：可选择第三方渠道，也可使用平台账号（密码或 Passkey）登录后直接授权
+- 应用管理可配置「接入示例参数」（`key=value` 形式，如接入方自带的 `state` / `app_id` / `oauth_state`），仅用于生成应用接入文档里的示例地址，不参与任何校验；不配置则用默认示例值
 
 ### 通用 OAuth2/OIDC 登录渠道（作为客户端）
 

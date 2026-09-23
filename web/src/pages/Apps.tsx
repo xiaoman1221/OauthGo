@@ -81,6 +81,7 @@ interface AppForm {
   app_key: string
   domains: string
   redirect_uris: string
+  sample_params: string
   enable_refresh: boolean
   status: number
   regenerate_key: boolean
@@ -95,10 +96,28 @@ const emptyForm: AppForm = {
   app_key: '',
   domains: '',
   redirect_uris: '',
+  sample_params: '',
   enable_refresh: false,
   status: 1,
   regenerate_key: false
 }
+
+// parseSampleParams / formatSampleParams 接入示例参数在表单里按「每行 key=value」编辑，存储为 JSON 对象
+const parseSampleParams = (text: string): Record<string, string> => {
+  const out: Record<string, string> = {}
+  text.split(/\n/).forEach((line) => {
+    const i = line.indexOf('=')
+    if (i <= 0) return
+    const k = line.slice(0, i).trim()
+    if (k) out[k] = line.slice(i + 1).trim()
+  })
+  return out
+}
+
+const formatSampleParams = (params?: Record<string, string>): string =>
+  Object.entries(params || {})
+    .map(([k, v]) => `${k}=${v}`)
+    .join('\n')
 
 export default function Apps() {
   const isAdmin = useIsAdmin()
@@ -160,6 +179,7 @@ export default function Apps() {
       app_key: row.app_key,
       domains: row.domains,
       redirect_uris: (row.redirect_uris || []).join('\n'),
+      sample_params: formatSampleParams(row.sample_params),
       enable_refresh: !!row.enable_refresh,
       status: row.status,
       regenerate_key: false
@@ -181,6 +201,7 @@ export default function Apps() {
           .split(/\n/)
           .map((s) => s.trim())
           .filter(Boolean),
+        sample_params: parseSampleParams(form.sample_params),
         enable_refresh: form.enable_refresh,
         status: form.status,
         regenerate_key: form.regenerate_key
@@ -215,6 +236,7 @@ export default function Apps() {
           .split(/\n/)
           .map((s) => s.trim())
           .filter(Boolean),
+        sample_params: parseSampleParams(form.sample_params),
         enable_refresh: form.enable_refresh,
         status: form.status,
         regenerate_key: true
@@ -264,6 +286,11 @@ export default function Apps() {
     const domain = (docsApp.domains || '').split(/\n/).map((s) => s.trim()).filter(Boolean)[0] || 'example.com'
     const callback = `https://${domain}/oauth/callback`
     const oauth2Callback = ((docsApp.redirect_uris || [])[0]) || callback
+    // 示例地址里的接入方参数取自「接入示例参数」（应用管理中配置），未配置时回落到 defaults
+    const withSamples = (defaults: Record<string, string>) =>
+      Object.entries({ ...defaults, ...(docsApp.sample_params || {}) })
+        .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+        .join('&')
     return {
       type,
       callback,
@@ -288,8 +315,8 @@ export default function Apps() {
         2
       ),
       oauth2Callback,
-      oauth2Authorize: `${baseUrl}/authorize?response_type=code&client_id=${docsApp.appid}&redirect_uri=${encodeURIComponent(oauth2Callback)}&scope=openid%20profile&state=YOUR_STATE`,
-      oauth2Return: `${oauth2Callback}?code=520DD95263C1CFEA0870FBB66E******&state=YOUR_STATE`,
+      oauth2Authorize: `${baseUrl}/authorize?response_type=code&client_id=${docsApp.appid}&redirect_uri=${encodeURIComponent(oauth2Callback)}&scope=openid%20profile&${withSamples({ state: 'YOUR_STATE' })}`,
+      oauth2Return: `${oauth2Callback}?code=520DD95263C1CFEA0870FBB66E******&${withSamples({ state: 'YOUR_STATE' })}`,
       oauth2Token: `curl -X POST ${baseUrl}/token \\
   -d "grant_type=authorization_code" \\
   -d "code=520DD95263C1CFEA0870FBB66E******" \\
@@ -543,6 +570,19 @@ export default function Apps() {
                 />
                 <p className="text-xs leading-relaxed text-muted-foreground">
                   每行一个完整回调地址（按 scheme+host+path 匹配，忽略 query，故接入方在回跳地址上追加动态参数也能通过）。接入标准 OAuth2 / OIDC（authorization code flow）时必填。
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>接入示例参数</Label>
+                <Textarea
+                  value={form.sample_params}
+                  onChange={(e) => setForm({ ...form, sample_params: e.target.value })}
+                  rows={3}
+                  placeholder={'state=YOUR_STATE\napp_id=FT20260923XWAIGM'}
+                />
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  每行一个 <code>key=value</code>。接入方自带的参数样例（如 WPS SSO 的 app_id / oauth_state / state），仅用于生成下方接入文档中的示例地址，不参与任何校验。留空则用默认示例值。
                 </p>
               </div>
 

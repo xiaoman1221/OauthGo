@@ -348,6 +348,7 @@ sign = md5(原串)
       供任意 OIDC / OAuth2 客户端接入（如使用 <code>oidc-client</code>、Keycloak、Auth0 等生态）。
       应用凭证：<code>appid</code> = <code>client_id</code>，<code>appkey</code> = <code>client_secret</code>。
       在「应用管理」中把模式设为 <code>oauth2 / compat</code> 并配置「OAuth2/OIDC 回调地址」（按 scheme+host+path 匹配，忽略 query，每行一个）。
+      接入方自带参数（如 <code>state</code> / <code>app_id</code>）可在「接入示例参数」里逐行配置，仅用于生成示例地址，不参与校验。
     </div>
 
     <h2>端点一览</h2>

@@ -59,6 +59,7 @@ export interface App {
   types: string[]
   domains: string
   redirect_uris: string[]
+  sample_params: Record<string, string>
   enable_refresh: boolean
   oidc_discovery_url: string
   status: number

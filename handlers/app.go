@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -16,15 +17,16 @@ import (
 
 // AppRequest 应用创建/更新请求
 type AppRequest struct {
-	Name          string   `json:"name" binding:"required"`
-	Platform      string   `json:"platform"`
-	Mode          string   `json:"mode"`
-	Types         []string `json:"types"`
-	Domains       string   `json:"domains"`
-	RedirectURIs  []string `json:"redirect_uris"`  // OAuth2/OIDC 回调地址白名单（精确匹配，完整 URL）
-	EnableRefresh bool     `json:"enable_refresh"` // OAuth2 是否签发 refresh_token
-	RegenerateKey bool     `json:"regenerate_key"`
-	Status        *int     `json:"status"`
+	Name          string            `json:"name" binding:"required"`
+	Platform      string            `json:"platform"`
+	Mode          string            `json:"mode"`
+	Types         []string          `json:"types"`
+	Domains       string            `json:"domains"`
+	RedirectURIs  []string          `json:"redirect_uris"`  // OAuth2/OIDC 回调地址白名单（按 scheme+host+path 匹配，完整 URL）
+	SampleParams  map[string]string `json:"sample_params"`  // 接入示例参数：接入方自带参数的样例值，仅用于生成接入文档
+	EnableRefresh bool              `json:"enable_refresh"` // OAuth2 是否签发 refresh_token
+	RegenerateKey bool              `json:"regenerate_key"`
+	Status        *int              `json:"status"`
 }
 
 // appView 应用输出（types 解析为数组）
@@ -39,6 +41,11 @@ func appView(app *models.App) gin.H {
 	if redirectURIs == nil {
 		redirectURIs = []string{}
 	}
+	var sampleParams map[string]string
+	_ = json.Unmarshal([]byte(app.SampleParams), &sampleParams)
+	if sampleParams == nil {
+		sampleParams = map[string]string{}
+	}
 	return gin.H{
 		"id":             app.ID,
 		"owner_id":       app.OwnerID,
@@ -50,6 +57,7 @@ func appView(app *models.App) gin.H {
 		"types":          types,
 		"domains":        app.Domains,
 		"redirect_uris":  redirectURIs,
+		"sample_params":  sampleParams,
 		"enable_refresh": app.EnableRefresh,
 		// OIDC Discovery URL（本平台单 issuer=HOST），供 oidc-client 等 SDK 自动发现
 		"oidc_discovery_url": services.OAuthIssuer() + "/.well-known/openid-configuration",
@@ -81,6 +89,9 @@ func validateAppReq(req *AppRequest) string {
 			return "存在不支持的登录类型: " + t
 		}
 	}
+	if msg := validateSampleParams(req.SampleParams); msg != "" {
+		return msg
+	}
 	if req.Domains != "" {
 		normalized, msg := services.NormalizeDomains(req.Domains)
 		if msg != "" {
@@ -104,6 +115,41 @@ func redirectURIsToJSON(list []string) string {
 		list = []string{}
 	}
 	b, _ := json.Marshal(list)
+	return string(b)
+}
+
+// sampleParamKeyPat 接入示例参数名：合法 query 参数名（字母、数字、下划线、点、连字符）
+var sampleParamKeyPat = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
+
+// reservedSampleParamKeys 不允许出现在接入示例参数里的平台参数：会与生成的示例地址冲突
+var reservedSampleParamKeys = map[string]bool{
+	"client_id": true, "redirect_uri": true, "response_type": true,
+}
+
+// validateSampleParams 校验接入示例参数（仅用于文档示例，限制数量与长度避免被当成配置滥用）
+func validateSampleParams(params map[string]string) string {
+	if len(params) > 20 {
+		return "接入示例参数过多（最多 20 个）"
+	}
+	for k, v := range params {
+		if !sampleParamKeyPat.MatchString(k) {
+			return "接入示例参数名不合法（仅限字母、数字、下划线、点、连字符）：" + k
+		}
+		if reservedSampleParamKeys[k] {
+			return "接入示例参数不能覆盖平台参数：" + k
+		}
+		if len(v) > 512 {
+			return "接入示例参数值过长（最多 512 字节）：" + k
+		}
+	}
+	return ""
+}
+
+func sampleParamsToJSON(params map[string]string) string {
+	if params == nil {
+		params = map[string]string{}
+	}
+	b, _ := json.Marshal(params)
 	return string(b)
 }
 
@@ -203,6 +249,7 @@ func CreateApp(c *gin.Context) {
 		Types:         typesToJSON(req.Types),
 		Domains:       req.Domains,
 		RedirectURIs:  redirectURIsToJSON(req.RedirectURIs),
+		SampleParams:  sampleParamsToJSON(req.SampleParams),
 		EnableRefresh: req.EnableRefresh,
 		Status:        1,
 	}
@@ -266,6 +313,7 @@ func UpdateApp(c *gin.Context) {
 		"types":          typesToJSON(req.Types),
 		"domains":        req.Domains,
 		"redirect_uris":  redirectURIsToJSON(req.RedirectURIs),
+		"sample_params":  sampleParamsToJSON(req.SampleParams),
 		"enable_refresh": req.EnableRefresh,
 	}
 	if req.RegenerateKey {
