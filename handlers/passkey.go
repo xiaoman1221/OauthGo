@@ -10,6 +10,7 @@ import (
 	"OauthGo/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-webauthn/webauthn/webauthn"
 )
 
 // PasskeyRegisterBegin 开始注册 Passkey（需登录）
@@ -79,25 +80,12 @@ func PasskeyRegisterFinish(c *gin.Context) {
 
 // PasskeyLoginBegin 开始 Passkey 登录（需提供用户名；返回可断言的挑战）
 // GET/POST /api/auth/passkey/login/begin?username=xxx
+// 防账号枚举：账号不存在 / 未注册 Passkey 时返回结构与真实账号完全一致的假挑战，
+// 该会话绑定的用户为 0，无法完成签名，最终在 finish 处以「用户不存在」失败。
 func PasskeyLoginBegin(c *gin.Context) {
 	username := strings.TrimSpace(c.DefaultQuery("username", ""))
 	if username == "" {
 		utils.FailBadRequest(c, "请输入用户名（用于定位 Passkey 凭据）")
-		return
-	}
-	u, err := findUserByAccount(username)
-	if err != nil {
-		utils.FailBadRequest(c, "账号不存在或未注册 Passkey")
-		return
-	}
-	user := *u
-	passkeyUser, err := services.LoadPasskeyUser(user.ID)
-	if err != nil {
-		utils.FailBadRequest(c, "账号不存在或未注册 Passkey")
-		return
-	}
-	if len(passkeyUser.Credentials) == 0 {
-		utils.FailBadRequest(c, "账号不存在或未注册 Passkey")
 		return
 	}
 	wa, err := services.NewPasskeyWebAuthn()
@@ -105,12 +93,26 @@ func PasskeyLoginBegin(c *gin.Context) {
 		utils.FailInternal(c, "WebAuthn 配置错误："+err.Error())
 		return
 	}
+
+	var passkeyUser *services.PasskeyUser
+	if u, err := findUserByAccount(username); err == nil {
+		if pu, puErr := services.LoadPasskeyUser(u.ID); puErr == nil && len(pu.Credentials) > 0 {
+			passkeyUser = pu
+		}
+	}
+	if passkeyUser == nil {
+		passkeyUser = &services.PasskeyUser{
+			User:        models.User{Username: username},
+			Credentials: []webauthn.Credential{{ID: []byte(utils.RandomString(32))}},
+		}
+	}
+
 	assertion, session, err := wa.BeginLogin(passkeyUser)
 	if err != nil {
 		utils.FailInternal(c, "创建登录挑战失败："+err.Error())
 		return
 	}
-	sessionID := services.StorePasskeySession(services.PasskeySessionLogin, user.ID, session)
+	sessionID := services.StorePasskeySession(services.PasskeySessionLogin, passkeyUser.User.ID, session)
 	utils.Success(c, gin.H{"options": assertion, "session_id": sessionID})
 }
 

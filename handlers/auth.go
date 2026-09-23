@@ -164,7 +164,7 @@ func Login(c *gin.Context) {
 	utils.Success(c, gin.H{"token": token, "user": user})
 }
 
-// AuthConfig 公开的认证配置（供登录/注册页使用）
+// AuthConfig 公开的认证配置（供登录/注册页与头像渲染使用，只读、无敏感项）
 func AuthConfig(c *gin.Context) {
 	utils.Success(c, gin.H{
 		"register_enabled":      services.GetBoolSetting("register_enabled", true),
@@ -172,10 +172,14 @@ func AuthConfig(c *gin.Context) {
 		"password_min_length":   services.GetIntSetting("password_min_length", 6),
 		"code_length":           services.GetIntSetting("code_length", 6),
 		"site_name":             services.GetSetting("site_name", "OauthGo"),
-		// login background settings for public pages
+		// 登录页背景设置
 		"login_bg_mode":      services.GetSetting("login_bg_mode", "color"),
 		"login_bg_color":     services.GetSetting("login_bg_color", "#1f4037"),
 		"login_bg_image_url": services.GetSetting("login_bg_image_url", ""),
+		// 头像设置（普通用户前端渲染头像所需，公开只读）
+		"avatar_source":           services.GetSetting("avatar_source", "auto"),
+		"gravatar_mirror_enabled": services.GetSetting("gravatar_mirror_enabled", "1"),
+		"gravatar_mirror":         services.GetSetting("gravatar_mirror", "https://cravatar.cn/avatar"),
 	})
 }
 

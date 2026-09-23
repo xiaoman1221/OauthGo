@@ -9,7 +9,7 @@ services:
       PORT: "8080"
       GIN_MODE: "${GIN_MODE:-release}"
       HOST: "${HOST:-http://localhost:8080}"
-      JWT_KEY: "${JWT_KEY:-change-me-to-a-random-secret}"
+      JWT_KEY: "${JWT_KEY:-}"  # 留空则首次启动自动生成随机密钥并持久化
       DB_PATH: /app/data/data.db
       TZ: "${TZ:-Asia/Shanghai}"
     volumes:

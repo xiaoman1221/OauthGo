@@ -3,6 +3,8 @@ package middleware
 import (
 	"strings"
 
+	"OauthGo/database"
+	"OauthGo/models"
 	"OauthGo/utils"
 
 	"github.com/gin-gonic/gin"
@@ -31,11 +33,15 @@ func JWT() gin.HandlerFunc {
 	}
 }
 
-// AdminOnly 管理员权限校验中间件
+// AdminOnly 管理员权限校验中间件。
+// 角色实时查库校验而非信任 JWT 内嵌声明：管理员被降级 / 删除后立即失去后台权限，
+// 不必等待旧令牌过期（JWT 有效期 24 小时）。
 func AdminOnly() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		role, _ := c.Get("role")
-		if role != "admin" {
+		userID, _ := c.Get("user_id")
+		uid, _ := userID.(uint)
+		var user models.User
+		if err := database.DB.Select("role").First(&user, uid).Error; err != nil || user.Role != "admin" {
 			utils.FailForbidden(c)
 			c.Abort()
 			return

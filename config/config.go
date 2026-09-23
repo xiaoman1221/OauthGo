@@ -1,8 +1,8 @@
 package config
 
 import (
-	"log"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -20,7 +20,9 @@ type Config struct {
 // AppConfig 应用配置实例
 var AppConfig Config
 
-// Load 加载环境变量配置
+// Load 加载环境变量配置。
+// JWT_KEY 留空时不在此时兜底：待数据库初始化后由 services.EnsureJWTKey
+// 生成随机密钥并持久化（杜绝使用公开默认密钥被伪造 admin 令牌的风险）。
 func Load() {
 	_ = godotenv.Load()
 
@@ -30,12 +32,7 @@ func Load() {
 		Port:           getEnv("PORT", "8080"),
 		GinMode:        getEnv("GIN_MODE", "debug"),
 		DBPath:         getEnv("DB_PATH", "data.db"),
-		JWTKey:         getEnv("JWT_KEY", ""),
-	}
-
-	if AppConfig.JWTKey == "" {
-		log.Println("[WARN] 未配置 JWT_KEY，使用默认密钥（生产环境请务必修改）")
-		AppConfig.JWTKey = "oauthgo-default-jwt-secret-2026"
+		JWTKey:         strings.TrimSpace(os.Getenv("JWT_KEY")),
 	}
 }
 

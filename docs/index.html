@@ -347,7 +347,7 @@ sign = md5(原串)
       本平台同时可作为标准的 <b>OAuth2 / OIDC 授权服务器</b>（authorization code flow），
       供任意 OIDC / OAuth2 客户端接入（如使用 <code>oidc-client</code>、Keycloak、Auth0 等生态）。
       应用凭证：<code>appid</code> = <code>client_id</code>，<code>appkey</code> = <code>client_secret</code>。
-      在「应用管理」中把模式设为 <code>oauth2 / compat</code> 并配置「OAuth2/OIDC 回调地址」（精确匹配，每行一个）。
+      在「应用管理」中把模式设为 <code>oauth2 / compat</code> 并配置「OAuth2/OIDC 回调地址」（按 scheme+host+path 匹配，忽略 query，每行一个）。
     </div>
 
     <h2>端点一览</h2>
@@ -379,7 +379,7 @@ sign = md5(原串)
     <p>未指定 <code>type</code> 的授权页提供<b>「使用 OauthGo 账号」</b>登录：支持账号密码与 <b>Passkey / WebAuthn</b> 无密码登录。登录成功后平台直接为该账号签发授权码回跳目标站点，实现以平台账号为身份源的单点登录（SSO）。</p>
 
     <h2>1. 发起授权</h2>
-    <p>应用须先配置「OAuth2/OIDC 回调地址」（完整 URL，精确匹配）。<code>type</code> 可选：渠道名（provider name，如 <code>wechat</code> / <code>gitee</code> / <code>qq</code> / <code>oauth2</code>）。</p>
+    <p>应用须先配置「OAuth2/OIDC 回调地址」（完整 URL，按 scheme+host+path 匹配，忽略 query）。<code>client_id</code> / <code>redirect_uri</code> 兼容 <code>appid</code>、<code>redirect_url</code> 等非标准命名。<code>type</code> 可选：渠道名（provider name，如 <code>wechat</code> / <code>gitee</code> / <code>qq</code> / <code>oauth2</code>）。</p>
     <pre><code>https://your-host/authorize?response_type=code&amp;client_id=10001&amp;redirect_uri=https%3A%2F%2Fexample.com%2Foauth%2Fcallback&amp;scope=openid%20profile&amp;state=abc123
 </code><button class="copy-btn" onclick="copy(this)">复制</button></pre>
 

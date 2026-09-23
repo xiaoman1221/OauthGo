@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -173,9 +174,27 @@ func OAuthIssuer() string {
 	return host
 }
 
+// oauthRedirectKey 归一化回调地址为「scheme://host/path」，丢弃 query 与 fragment。
+// 部分接入方（如 WPS 企业 SSO）会在回跳地址上追加每次请求都不同的 oauth_state / state，
+// 逐字符比对必然失败；授权码的落点仍由白名单里的 host+path 决定，忽略 query 不放宽落点。
+// 非法 / 相对地址返回空串，调用方应据此拒绝。
+func oauthRedirectKey(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return strings.ToLower(u.Scheme) + "://" + strings.ToLower(u.Host) + u.Path
+}
+
+// SameOAuthRedirect 判断两个回调地址是否指向同一落点（scheme + host + path，忽略 query / fragment）
+func SameOAuthRedirect(a, b string) bool {
+	key := oauthRedirectKey(a)
+	return key != "" && key == oauthRedirectKey(b)
+}
+
 // ValidOAuthRedirectURI 校验 redirect_uri 是否在应用 OAuth2 回调白名单内。
-// OAuth2 要求精确回调地址匹配：未配置 redirect_uris 时一律拒绝（不回退到域名白名单），
-// 避免开放重定向被用于授权码劫持。
+// 按 scheme + host + path 精确匹配（忽略 query，见 oauthRedirectKey）：未配置 redirect_uris 时
+// 一律拒绝（不回退到域名白名单），避免开放重定向被用于授权码劫持。
 func ValidOAuthRedirectURI(app *models.App, redirectURI string) bool {
 	if redirectURI == "" {
 		return false
@@ -184,8 +203,12 @@ func ValidOAuthRedirectURI(app *models.App, redirectURI string) bool {
 	if err := json.Unmarshal([]byte(app.RedirectURIs), &uris); err != nil {
 		return false
 	}
+	key := oauthRedirectKey(redirectURI)
+	if key == "" {
+		return false
+	}
 	for _, u := range uris {
-		if u == redirectURI {
+		if oauthRedirectKey(u) == key {
 			return true
 		}
 	}

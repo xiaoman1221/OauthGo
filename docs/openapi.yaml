@@ -47,7 +47,7 @@ paths:
           in: query
           required: true
           schema: { type: string, format: uri }
-          description: 应用配置的 OAuth2 回调地址（精确匹配）
+          description: 应用配置的 OAuth2 回调地址（按 scheme+host+path 匹配，忽略 query；兼容 redirect_url 别名）
         - name: scope
           in: query
           required: false

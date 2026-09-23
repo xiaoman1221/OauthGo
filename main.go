@@ -13,6 +13,8 @@ func main() {
 	config.Load()
 	database.Init()
 	services.InitSettings()
+	// 解析 JWT 签名密钥（环境变量优先，否则生成并持久化）
+	services.EnsureJWTKey()
 
 	r := router.Setup()
 	log.Println("OauthGo Powered By xiaoman1221")

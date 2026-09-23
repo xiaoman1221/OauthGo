@@ -26,6 +26,20 @@ func oauth2SecretEqual(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
+// oauth2AuthParam 读取授权端点参数：合并 query 与 POST 表单，并兼容非标准参数名。
+// 部分接入方（如 WPS 企业 SSO）用 redirect_url / app_id 而非标准 redirect_uri / client_id，
+// 只认标准名会直接以「缺少 client_id 或 redirect_uri」拒绝。
+// names 按优先级排列，返回首个非空值。
+func oauth2AuthParam(c *gin.Context, names ...string) string {
+	_ = c.Request.ParseForm() // 幂等：把 POST 表单并入 c.Request.Form，GET 则仅解析 query
+	for _, n := range names {
+		if v := c.Request.Form.Get(n); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 // ---------- 授权端点 ----------
 
 // AuthorizeOAuth2 标准 OAuth2 / OIDC 授权端点（authorization code flow）
@@ -34,16 +48,16 @@ func oauth2SecretEqual(a, b string) bool {
 //
 // 可选：type={渠道} 直接发起第三方渠道授权；不传则返回渠道选择页。
 // 支持 PKCE（code_challenge + code_challenge_method=S256|plain，可选）。
+// client_id / redirect_uri 兼容 appid、redirect_url 等非标准命名（见 oauth2AuthParam）。
 func AuthorizeOAuth2(c *gin.Context) {
-	q := c.Request.URL.Query()
-	responseType := q.Get("response_type")
-	clientID := q.Get("client_id")
-	redirectURI := q.Get("redirect_uri")
-	scope := q.Get("scope")
-	state := q.Get("state")
-	nonce := q.Get("nonce")
-	challenge := q.Get("code_challenge")
-	challengeMethod := q.Get("code_challenge_method")
+	responseType := oauth2AuthParam(c, "response_type")
+	clientID := oauth2AuthParam(c, "client_id", "appid", "app_id")
+	redirectURI := oauth2AuthParam(c, "redirect_uri", "redirect_url", "redirectUrl", "redirectUri", "callback_url")
+	scope := oauth2AuthParam(c, "scope")
+	state := oauth2AuthParam(c, "state")
+	nonce := oauth2AuthParam(c, "nonce")
+	challenge := oauth2AuthParam(c, "code_challenge")
+	challengeMethod := oauth2AuthParam(c, "code_challenge_method")
 
 	if responseType == "" {
 		responseType = "code"
@@ -75,17 +89,18 @@ func AuthorizeOAuth2(c *gin.Context) {
 	}
 
 	// response_mode：仅支持默认的 query
-	if rm := q.Get("response_mode"); rm != "" && rm != "query" {
+	if rm := oauth2AuthParam(c, "response_mode"); rm != "" && rm != "query" {
 		oauth2ErrorRedirect(c, redirectURI, state, "unsupported_response_mode", "仅支持 response_mode=query")
 		return
 	}
 	// prompt=none：本平台授权采用「每次一键确认」，无静默发码，一律返回 login_required（OIDC Core §3.1.2.1）
-	if strings.Contains(q.Get("prompt"), "none") {
+	prompt := oauth2AuthParam(c, "prompt")
+	if strings.Contains(prompt, "none") {
 		oauth2ErrorRedirect(c, redirectURI, state, "login_required", "无法静默授权，需要用户登录")
 		return
 	}
 	// prompt=login：忽略已有登录会话，强制展示登录表单（用于「切换账号」）
-	forceLogin := strings.Contains(q.Get("prompt"), "login")
+	forceLogin := strings.Contains(prompt, "login")
 
 	// 校验 PKCE 参数
 	if challenge != "" {
@@ -103,7 +118,7 @@ func AuthorizeOAuth2(c *gin.Context) {
 		return
 	}
 
-	providerName := strings.TrimSpace(q.Get("type"))
+	providerName := strings.TrimSpace(oauth2AuthParam(c, "type"))
 	if providerName != "" {
 		resolved, ok := services.ResolveType(providerName, app.Mode)
 		if !ok || !services.AppSupportsType(app, resolved) {
@@ -159,7 +174,9 @@ func AuthorizeOAuth2(c *gin.Context) {
 // 使本平台可作为 IDP / CAS：平台账号登录成功后即签发 OIDC 授权码回跳目标站点。
 // sessionUser 非空表示浏览器已有登录会话：直接展示「一键继续」+ 账号切换入口。
 func oauth2ConsentPage(c *gin.Context, app *models.App, ctxID string, sessionUser *models.User, forceLogin bool) string {
-	base := c.Request.URL.Path + "?" + c.Request.URL.RawQuery
+	// 用 ParseForm 后的合并参数（GET query 或 POST 表单）重放本次授权请求，
+	// 保证 POST /authorize 进入授权页后，渠道链接仍带着完整参数
+	base := c.Request.URL.Path + "?" + c.Request.Form.Encode()
 	switchURL := base + "&prompt=login"
 
 	var types []string
@@ -422,7 +439,7 @@ func oauth2TokenByCode(c *gin.Context, app *models.App) {
 		oauth2TokenError(c, http.StatusBadRequest, "invalid_grant", "授权码已过期")
 		return
 	}
-	if ru := c.Request.Form.Get("redirect_uri"); ru != "" && ru != code.RedirectURI {
+	if ru := oauth2AuthParam(c, "redirect_uri", "redirect_url", "redirectUrl", "redirectUri", "callback_url"); ru != "" && !services.SameOAuthRedirect(ru, code.RedirectURI) {
 		oauth2TokenError(c, http.StatusBadRequest, "invalid_grant", "redirect_uri 不匹配")
 		return
 	}

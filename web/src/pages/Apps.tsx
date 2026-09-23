@@ -542,7 +542,7 @@ export default function Apps() {
                   placeholder={'https://example.com/oauth/callback'}
                 />
                 <p className="text-xs leading-relaxed text-muted-foreground">
-                  每行一个完整回调地址（精确匹配）。接入标准 OAuth2 / OIDC（authorization code flow）时必填。
+                  每行一个完整回调地址（按 scheme+host+path 匹配，忽略 query，故接入方在回跳地址上追加动态参数也能通过）。接入标准 OAuth2 / OIDC（authorization code flow）时必填。
                 </p>
               </div>
 

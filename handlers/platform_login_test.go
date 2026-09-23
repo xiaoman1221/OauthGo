@@ -99,10 +99,10 @@ func TestOAuth2PlatformLoginFlow(t *testing.T) {
 func TestPasskeyAPIValidation(t *testing.T) {
 	user, _ := testUser(t)
 
-	// 无凭据用户 login begin → 400 统一提示（不暴露账号状态，防枚举）
-	w, _ := doGet(t, "/api/auth/passkey/login/begin?username="+user.Username)
-	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "未注册") {
-		t.Fatalf("无凭据用户 begin 应 400 统一提示: %d %s", w.Code, w.Body.String())
+	// 无凭据用户 login begin → 200 假挑战（响应结构与真实账号一致，防账号枚举）
+	w, body := doGet(t, "/api/auth/passkey/login/begin?username="+user.Username)
+	if w.Code != http.StatusOK || !strings.Contains(body, "session_id") || !strings.Contains(body, "challenge") {
+		t.Fatalf("无凭据用户 begin 应返回 200 假挑战: %d %s", w.Code, body)
 	}
 
 	// 无 username

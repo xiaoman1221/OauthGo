@@ -29,7 +29,8 @@ docker compose up -d   # 使用官方镜像 xiaoman1221/oauthgo:latest
 
 访问 http://localhost:8080，数据持久化在宿主 `./data` 目录（挂载到容器 `/app/data`）。
 
-建议部署前设置 `JWT_KEY`（随机长密钥）与 `HOST`（站点对外地址，决定第三方回调与 OIDC issuer）：
+建议部署前设置 `HOST`（站点对外地址，决定第三方回调与 OIDC issuer）与 `JWT_KEY`
+（控制台登录密钥；**留空时首次启动自动生成随机密钥并持久化到数据库**，跨实例共享登录态才需显式配置）：
 
 ```bash
 JWT_KEY=your-strong-random-secret HOST=https://oauth.example.com docker compose up -d
@@ -73,7 +74,7 @@ make                   # 一键构建前端 + 后端（等价于 bash build.sh�
 |------|------|--------|
 | `PORT` | 服务端口 | `8080` |
 | `HOST` | 站点对外地址（第三方回调、OIDC issuer、Passkey RP 均由它派生） | `http://localhost:8080` |
-| `JWT_KEY` | 控制台 JWT 密钥，生产环境务必设置为随机长字符串 | 内置默认值（启动时告警） |
+| `JWT_KEY` | 控制台 JWT 密钥；**留空则首次启动自动生成随机密钥并持久化到数据库**，跨实例共享登录态时需显式配置 | 自动生成 |
 | `GIN_MODE` | Gin 模式（debug / release） | `debug` |
 | `DB_PATH` | SQLite 数据库文件路径 | `data.db` |
 | `TRUSTED_PROXIES` | 可信代理 CIDR（逗号分隔）；反向代理部署时配置，默认不信任任何代理（防伪造 IP） | 空 |
@@ -126,7 +127,7 @@ GET /connect.php?act=callback&appid={appid}&appkey={appkey}&type=gitee&code={cod
 
 ### OAuth2 / OIDC（授权服务器）
 
-`appid` 即 `client_id`、`appkey` 即 `client_secret`；应用模式需为 `oauth2` / `compat`，并配置「OAuth2/OIDC 回调地址」精确白名单。任意 OIDC/OAuth2 客户端（oidc-client、Keycloak 等）可按 Discovery 自动接入：
+`appid` 即 `client_id`、`appkey` 即 `client_secret`；应用模式需为 `oauth2` / `compat`，并配置「OAuth2/OIDC 回调地址」白名单。任意 OIDC/OAuth2 客户端（oidc-client、Keycloak 等）可按 Discovery 自动接入：
 
 ```text
 授权   GET  {HOST}/authorize?response_type=code&client_id={appid}&redirect_uri=...&scope=openid%20profile&state=...
@@ -137,6 +138,7 @@ GET /connect.php?act=callback&appid={appid}&appkey={appkey}&type=gitee&code={cod
 公钥   GET  {HOST}/jwks     (id_token RS256 验签, kid=oauthgo-rsa-1)
 ```
 
+- 回调白名单按 `scheme://host/path` 匹配、忽略 query，可接入在回跳地址上追加动态参数（如 `oauth_state`）的 SSO 平台；`client_id` / `redirect_uri` 兼容 `appid`、`redirect_url` 等非标准命名，POST `/authorize` 表单体同样有效
 - 支持 PKCE（S256/plain）、refresh_token 轮换、nonce 透传写入 id_token、一次性授权码
 - scope 含 `openid` 时签发 RS256 id_token；`profile` / `email` / `phone` scope 控制用户信息字段
 - `/authorize` 未指定 `type` 时返回授权页：可选择第三方渠道，也可使用平台账号（密码或 Passkey）登录后直接授权

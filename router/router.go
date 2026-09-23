@@ -156,18 +156,14 @@ func Setup() *gin.Engine {
 				logins.GET("/export", handlers.ExportLoginRecords)
 			}
 
-			// 系统设置模块
-			settings := authed.Group("/settings")
+			// 系统设置模块（仅管理员；普通用户所需的头像等公开配置走 /api/auth/config）
+			adminSettings := authed.Group("/settings")
+			adminSettings.Use(middleware.AdminOnly())
 			{
-				// 普通用户可读取设置（包含用户级限制），管理员可写入
-				settings.GET("", handlers.ListSettings)
-				adminSettings := settings.Group("")
-				adminSettings.Use(middleware.AdminOnly())
-				{
-					adminSettings.PUT("", handlers.UpdateSettings)
-					adminSettings.POST("/test/smtp", handlers.TestSMTP)
-					adminSettings.POST("/test/sms", handlers.TestSMS)
-				}
+				adminSettings.GET("", handlers.ListSettings)
+				adminSettings.PUT("", handlers.UpdateSettings)
+				adminSettings.POST("/test/smtp", handlers.TestSMTP)
+				adminSettings.POST("/test/sms", handlers.TestSMS)
 			}
 
 			// 用户管理模块（管理员）
